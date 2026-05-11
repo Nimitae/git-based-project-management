@@ -14,16 +14,18 @@ Allowed:
 Allowed:
 
 - Create projects, tasks, and documents.
-- Edit project state, planning docs, repo links, task definitions, dependencies, and asset manifests through PRs/MRs.
-- Review validation reports and merge approved work if permitted.
+- Edit project state, planning docs, repo links, task definitions, dependencies, asset manifests, and live notes through PRs/MRs.
+- Review validation and document-audit reports, then merge approved work if permitted.
 
 Recommended commands:
 
 ```powershell
 git_pm.py create-project --repo . --name "Arena Prototype" --owner "Samantha" --type game
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type game-design --title "Core Loop Design" --owner "Kai"
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type meeting-notes --title "Kickoff Notes" --owner "Samantha"
 git_pm.py create-task --repo . --project-id PROJ1 --title "Implement loop prototype" --assigned-to "Kenneth" --expected-output "Pull Request"
 git_pm.py validate --repo .
+git_pm.py audit-docs --repo .
 ```
 
 ## Assignee
@@ -35,6 +37,7 @@ Allowed:
 - Update assigned task status through website proposals, issues, or append-only events.
 - Submit output links.
 - Propose doc/spec changes in a PR/MR.
+- Add project notes, meeting-note follow-ups, or task events when new context appears.
 
 Not allowed by default:
 
@@ -67,6 +70,7 @@ Use PRs/MRs for:
 - Policies/templates.
 - Asset manifests.
 - Durable docs such as proposals, designs, reports, and decisions.
+- Meeting notes, project notes, weekly updates, risk logs, and retrospectives.
 
 Use task events or issues for:
 
@@ -74,6 +78,14 @@ Use task events or issues for:
 - Blockers.
 - Handoffs.
 - Output submission notes.
+
+## Live Versus Historical Records
+
+Live files should track the current project truth and should be reviewed regularly for inconsistencies. This includes root and project READMEs, `registry.yaml`, `project.yaml`, active specs, current notes, risk logs, policies, and live asset manifests.
+
+Historical files should preserve what was true when the work happened. This includes completed or verified task folders, append-only task events, review records, finalized meeting notes, archived reports, and docs marked `final`, `archived`, or `historical`.
+
+If terminology changes, such as `heroes` becoming `champions`, update the live files and add a decision or project note explaining the change. Do not edit an old completed task such as `Create hero Athena` unless the owner/admin explicitly approves a historical correction.
 
 ## Daily Role Examples
 

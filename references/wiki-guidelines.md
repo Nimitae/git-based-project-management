@@ -35,6 +35,22 @@ The H1 must start with the document ID:
 
 Use stable section names. Validation warns when required sections are missing for common document types.
 
+## Artifact Taxonomy
+
+Store non-task artifacts as documents or assets, not as loose files:
+
+- Meeting minutes: `meeting-notes` in `docs/notes/`.
+- Project notes: `project-note` in `docs/notes/`.
+- Weekly status updates: `weekly-update` in `docs/notes/`.
+- Risk tracking: `risk-log` in `docs/notes/`.
+- Retrospectives: `retro-notes` in `docs/notes/`.
+- Durable decisions: `decision` in `docs/decisions/`.
+- Designs/specs: `game-design`, `technical-spec`, `frontend-spec`, `backend-spec` in `docs/design/`.
+- Reports: `playtest-report`, `qa-report`, `research-report` in `docs/reports/`.
+- Asset/mockup briefs: `asset-brief`, `3d-asset-brief`, `video-brief`, `mockup-review` in `docs/production/`.
+
+Create them through `create-doc` so IDs and registry links stay consistent.
+
 ## Required Document Shapes
 
 `proposal`:
@@ -91,6 +107,71 @@ Use stable section names. Validation warns when required sections are missing fo
 - `Feedback`
 - `Decision`
 - `Follow-up Tasks`
+
+`meeting-notes`:
+
+- `Attendees`
+- `Discussion`
+- `Decisions`
+- `Actions`
+
+`project-note`:
+
+- `Context`
+- `Note`
+- `Links`
+- `Follow-up`
+
+`weekly-update`:
+
+- `Highlights`
+- `Progress`
+- `Risks`
+- `Next Week`
+
+`risk-log`:
+
+- `Risk`
+- `Impact`
+- `Mitigation`
+- `Owner`
+
+`retro-notes`:
+
+- `What Worked`
+- `What Did Not`
+- `Actions`
+- `Owners`
+
+## Live Documents And Historical Records
+
+Live documents are current truth. Keep them consistent when naming, scope, architecture, or ownership changes. Examples:
+
+- Root `README.md`
+- `registry.yaml`
+- Project `README.md`
+- `project.yaml`
+- Current design/spec docs
+- Active risk logs and weekly updates
+
+Historical records are evidence of what was true when work happened. Do not rewrite them just to match new terminology. Examples:
+
+- Completed or verified task YAML
+- Finalized meeting notes
+- Archived reports
+- Append-only events and reviews
+- Old task output records
+
+If terminology changes, update live docs and create a decision or project note. For example, if `heroes` becomes `champions`, update the live design docs and project README. Do not edit an old completed task titled `Create hero Athena`; preserve it and add a note linking the terminology decision.
+
+Use statuses:
+
+- `draft`, `live`, `review`: editable current documents.
+- `final`, `archived`, `historical`: protected historical documents.
+
+Run `audit-docs` regularly to find terminology drift and master-file inconsistencies.
+
+Use `policies/terminology.yaml` for terminology changes that should be enforced in live docs. Do not make the audit scan force changes to historical task titles. If a live overview must quote an old completed task name, add a narrow `allowed_occurrences` entry with the exact quoted text and a reason.
 
 `asset-brief` and `3d-asset-brief`:
 

@@ -39,6 +39,7 @@ projects/
       reports/
       production/
       release/
+      decisions/
       notes/
     assets/
       assets.yaml
@@ -67,6 +68,10 @@ Use these types unless a team extends the schema:
 - `postmortem`
 - `decision`
 - `meeting-notes`
+- `project-note`
+- `weekly-update`
+- `risk-log`
+- `retro-notes`
 
 ## Collaboration Rules
 
@@ -74,3 +79,4 @@ Use these types unless a team extends the schema:
 - The website creates proposals; it does not write directly to the default branch.
 - Task status and quick updates may use issue comments or append-only event files.
 - Each managed project may link multiple implementation repos. Agents must read the management repo first, then inspect only the implementation repos relevant to their assigned work.
+- Live documents should be audited for terminology and scope drift. Historical records should be preserved unless an explicit correction is approved.

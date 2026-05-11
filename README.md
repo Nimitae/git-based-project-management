@@ -50,6 +50,7 @@ Run the controller with Python:
 python scripts/git_pm.py doctor --interactive
 python scripts/git_pm.py init --repo ".\project-hub" --name "Project Hub" --owner "Your Name" --provider github --github-repo "owner/project-hub"
 python scripts/git_pm.py validate --repo ".\project-hub"
+python scripts/git_pm.py audit-docs --repo ".\project-hub"
 python scripts/git_pm.py compile --repo ".\project-hub"
 python scripts/git_pm.py website --repo ".\project-hub" --port 8787
 ```
@@ -106,6 +107,7 @@ Run these before handing the setup to another agent or deploying changes:
 python -m py_compile scripts/git_pm.py scripts/smoke_test.py scripts/node_website_smoke_test.py
 node --check assets/website/server.mjs
 node --check assets/website/static/app.js
+python scripts/git_pm.py audit-docs --repo ".\project-hub"
 python scripts/smoke_test.py
 python scripts/node_website_smoke_test.py
 ```
@@ -116,6 +118,8 @@ python scripts/node_website_smoke_test.py
 - The website is a human interface over Git, not the canonical database.
 - IDs are allocated by the controller or website backend, then validated before merge.
 - Day-to-day task updates use `update-task`, `add-event`, `submit-output`, `review-task`, and `register-asset`.
+- Meeting minutes, project notes, weekly updates, risk logs, retros, and decisions are first-class documents created with `create-doc`.
+- Live docs should be updated when terminology or scope changes; completed tasks and finalized records should stay historical.
 - Large videos, builds, source art, and captures should live in Git LFS, releases/packages, object storage, or implementation repos, with references tracked in asset manifests.
 
 See `references/architecture.md`, `references/schemas.md`, `references/wiki-guidelines.md`, `references/day-to-day-workflows.md`, and `references/website.md` for the detailed model.

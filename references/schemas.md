@@ -17,6 +17,7 @@ projects/
       reports/
       production/
       release/
+      decisions/
       notes/
     assets/
       assets.yaml
@@ -112,6 +113,15 @@ status: draft
 # DOC1 - First Playtest Report
 ```
 
+Document statuses:
+
+- `draft`: work in progress.
+- `live`: current source of truth.
+- `review`: current doc waiting review.
+- `final`: completed record that should not be rewritten.
+- `archived`: retained historical record.
+- `historical`: preserved context from past work.
+
 ## Assets
 
 Use project-level asset manifests for durable asset tracking:
@@ -193,3 +203,42 @@ Core document types:
 - `postmortem`
 - `decision`
 - `meeting-notes`
+- `project-note`
+- `weekly-update`
+- `risk-log`
+- `retro-notes`
+
+## Live Versus Historical
+
+Live/master files include `README.md`, `registry.yaml`, project `README.md`, `project.yaml`, current docs with `draft/live/review` status, and policy files. These should be updated when terminology or project direction changes.
+
+Historical files include completed or verified task YAML, append-only event/review logs, archived reports, finalized meeting notes, and docs with `final/archived/historical` status. These should not be modified to chase current terminology. Create a `decision` or `project-note` instead.
+
+Example: if the team renames `heroes` to `champions`, update live docs. Do not rewrite a completed `TASK17` titled `Create hero Athena`; preserve the record and link the terminology decision.
+
+## Terminology Policy
+
+`policies/terminology.yaml` can define preferred terms for `audit-docs`:
+
+```json
+{
+  "schema_version": 1,
+  "review_scope": "live-docs-and-master-files",
+  "skip_paths": ["registry.yaml", "policies/*"],
+  "allowed_occurrences": [
+    {
+      "path": "projects/PROJ1-arena/README.md",
+      "term": "hero",
+      "text": "Create hero Athena",
+      "reason": "Exact historical task title reference."
+    }
+  ],
+  "preferred_terms": [
+    {
+      "preferred": "champion",
+      "avoid": ["hero", "heroes"],
+      "enabled": true
+    }
+  ]
+}
+```

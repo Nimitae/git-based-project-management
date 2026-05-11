@@ -26,6 +26,7 @@ The bundled static UI supports:
 - Update-task, submit-output, add-event, and review-task forms.
 - Register-asset proposal form.
 - Edit-file proposal form.
+- Historical record edit guard for completed tasks, finalized docs, and append-only logs.
 - Local dry-run proposal output.
 
 ## Runtime Options
@@ -98,6 +99,16 @@ Proposal payload examples:
 }
 ```
 
+```json
+{
+  "type": "create_doc",
+  "project_id": "PROJ1",
+  "title": "Sprint Planning 2026-05-11",
+  "owner": "Maya",
+  "doc_type": "meeting-notes"
+}
+```
+
 ## Deployment Notes
 
 For local Python review:
@@ -166,4 +177,5 @@ For a manager asking an agent to deploy:
 - Long-form prose edits are accepted, but saved as MR proposals.
 - Status updates should be lightweight and visible in recent events.
 - Daily workflow forms should create the same canonical file changes an agent would create from the CLI.
+- Raw file edits should not be used to rewrite completed tasks, finalized docs, events, or reviews. Create a project note, decision, event, or review instead.
 - Every proposed change should show the target branch/MR or dry-run proposal path.

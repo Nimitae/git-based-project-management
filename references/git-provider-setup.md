@@ -66,10 +66,13 @@ At minimum, CI should run:
 
 ```powershell
 python scripts/git_pm.py validate --repo .
+python scripts/git_pm.py audit-docs --repo .
 python scripts/git_pm.py compile --repo .
 ```
 
 If the skill is vendored in a separate path, adapt the script path accordingly.
+
+Run the audit on every PR/MR and on a scheduled cadence before planning or release reviews. It is the check that catches master-file drift, missing policy files, terminology drift in live docs, and blocked tasks without blocker detail.
 
 ## Website Deployment
 

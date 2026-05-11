@@ -25,6 +25,13 @@ def run(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess
     return result
 
 
+def run_expect_fail(args: list[str]) -> subprocess.CompletedProcess:
+    result = subprocess.run([sys.executable, str(SCRIPT), *args], text=True, capture_output=True)
+    if result.returncode == 0:
+        raise RuntimeError(f"command unexpectedly succeeded: {' '.join(args)}\nSTDOUT:\n{result.stdout}")
+    return result
+
+
 def http_json(url: str, body: dict | None = None) -> dict:
     data = None
     headers = {}
@@ -55,12 +62,17 @@ def main() -> int:
         run(["update-task", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--status", "In Progress", "--user-update", "Smoke test update"])
         run(["submit-output", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--output", "https://example.com/output", "--message", "Smoke output"])
         run(["review-task", "--repo", str(repo), "--task-id", "TASK1", "--reviewer", "Terence", "--decision", "approved", "--notes", "Smoke review"])
+        historical = run_expect_fail(["update-task", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--status", "In Progress", "--user-update", "Should be blocked"])
+        if "historical" not in (historical.stderr + historical.stdout).lower():
+            raise RuntimeError(f"historical update guard did not explain the failure:\n{historical.stderr}")
+        run(["create-task", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke editable task", "--assigned-to", "Terence", "--role", "PM", "--expected-output", "Setup Confirmation"])
         run(["register-asset", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke mockup", "--asset-type", "mockup", "--source-url", "https://example.com/mockup", "--used-by", "PROJ1,TASK1", "--owner", "Terence"])
         validate = run(["validate", "--repo", str(repo), "--json"])
         issues = json.loads(validate.stdout)["issues"]
         errors = [item for item in issues if item["level"] == "error"]
         if errors:
             raise RuntimeError(f"validation errors: {errors}")
+        run(["audit-docs", "--repo", str(repo)])
         run(["compile", "--repo", str(repo)])
         port = free_port()
         env = os.environ.copy()
@@ -101,7 +113,7 @@ def main() -> int:
             base + "/api/proposals",
             {
                 "type": "update_task",
-                "task_id": "TASK1",
+                "task_id": "TASK2",
                 "actor": "Terence",
                 "status": "In Progress",
                 "user_update": "Website smoke update",

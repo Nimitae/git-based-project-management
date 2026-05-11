@@ -35,6 +35,7 @@ Use `scripts/git_pm.py` for deterministic work:
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" doctor --interactive
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" init --repo ".\project-hub" --name "New Project Hub" --owner "Terence" --provider github --github-repo "owner/project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" validate --repo ".\project-hub"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" audit-docs --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" compile --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
@@ -104,10 +105,20 @@ Use PRs/MRs for durable changes:
 - Dependency changes.
 - Asset manifest changes.
 - Review policy/template changes.
+- Live document terminology or scope changes.
 
 Use task events/issues for operational updates:
 
 - Started, blocked, submitted output, handoff note, quick status update.
+
+Use documents for durable artifacts beyond tasks:
+
+```powershell
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type meeting-notes --title "Sprint Planning 2026-05-11" --owner "Maya"
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type project-note --title "FTUE Analytics Notes" --owner "Bao"
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type risk-log --title "Release Risk Log" --owner "Maya"
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type decision --title "Rename Heroes To Champions" --owner "Maya"
+```
 
 Use controller commands for normal day-to-day updates:
 
@@ -117,6 +128,10 @@ git_pm.py submit-output --repo . --task-id TASK3 --actor "Paul" --output "https:
 git_pm.py review-task --repo . --task-id TASK3 --reviewer "Maya" --decision "approved" --notes "Accepted."
 git_pm.py register-asset --repo . --project-id PROJ1 --title "HUD mockup v2" --asset-type "mockup" --source-url "https://example.com/mockup" --used-by "PROJ1,TASK4" --owner "Fern"
 ```
+
+Run `audit-docs` regularly, especially before planning reviews or release reviews. It checks validation, expected master files, live docs, terminology drift, and blocked task details. Configure terminology checks in `policies/terminology.yaml`; use narrow `allowed_occurrences` for exact historical references that should remain unchanged.
+
+Treat live docs and historical records differently. Update live docs when terminology changes, such as renaming `heroes` to `champions`. Do not rewrite completed task records, finalized meeting notes, archived reports, append-only events, or reviews just to match new terminology. Instead, create a `decision` or `project-note` that explains the change.
 
 ## References
 
@@ -135,3 +150,4 @@ git_pm.py register-asset --repo . --project-id PROJ1 --title "HUD mockup v2" --a
 - Do not store binary-heavy assets directly in normal Git. Use Git LFS, Releases/Packages, object storage, or external product repos, and register them in `assets/assets.yaml`.
 - Do not treat generated website data as canonical. Rebuild it from Markdown/YAML.
 - Do not bypass validation when merging structural changes.
+- Do not rewrite completed tasks, finalized docs, append-only events, or reviews to match current terminology. Preserve them and add a live decision/project note instead.

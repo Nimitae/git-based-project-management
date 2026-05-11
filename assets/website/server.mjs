@@ -12,7 +12,9 @@ const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8787);
 const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "Done", "Verified", "Iceboxed"]);
 const PROJECT_STATUSES = new Set(["Planning", "Active", "Paused", "Shipped", "Archived"]);
-const DOC_TYPES = new Set(["proposal", "brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "playtest-plan", "playtest-report", "qa-report", "research-report", "asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes"]);
+const DOC_TYPES = new Set(["proposal", "brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "playtest-plan", "playtest-report", "qa-report", "research-report", "asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"]);
+const HISTORICAL_TASK_STATUSES = new Set(["Done", "Verified", "Iceboxed"]);
+const HISTORICAL_DOC_STATUSES = new Set(["final", "archived", "historical"]);
 const DOC_SECTION_REQUIREMENTS = {
   proposal: ["Problem", "Proposed Direction", "Risks", "Decision Needed"],
   brief: ["Goal", "Audience", "Scope", "Success Criteria"],
@@ -25,7 +27,13 @@ const DOC_SECTION_REQUIREMENTS = {
   "qa-report": ["Build", "Scope", "Defects", "Risks", "Release Recommendation"],
   "asset-brief": ["Purpose", "References", "Requirements", "Format", "Delivery"],
   "3d-asset-brief": ["Purpose", "References", "Model Requirements", "Texture Requirements", "Delivery"],
-  "mockup-review": ["Context", "Mockups", "Feedback", "Decision", "Follow-up Tasks"]
+  "mockup-review": ["Context", "Mockups", "Feedback", "Decision", "Follow-up Tasks"],
+  "decision": ["Context", "Decision", "Options Considered", "Consequences"],
+  "meeting-notes": ["Attendees", "Discussion", "Decisions", "Actions"],
+  "project-note": ["Context", "Note", "Links", "Follow-up"],
+  "weekly-update": ["Highlights", "Progress", "Risks", "Next Week"],
+  "risk-log": ["Risk", "Impact", "Mitigation", "Owner"],
+  "retro-notes": ["What Worked", "What Did Not", "Actions", "Owners"]
 };
 
 function nowIso() {
@@ -136,7 +144,8 @@ function docFolder(docType) {
   if (["playtest-plan", "playtest-report", "qa-report", "research-report"].includes(docType)) return "reports";
   if (["asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note"].includes(docType)) return "production";
   if (["release-plan", "postmortem"].includes(docType)) return "release";
-  if (["decision", "meeting-notes"].includes(docType)) return "notes";
+  if (docType === "decision") return "decisions";
+  if (["meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"].includes(docType)) return "notes";
   return "docs";
 }
 
@@ -277,6 +286,23 @@ function createDocPayload(registry, payload) {
   return { docId, rel, text };
 }
 
+function historicalEditReason(registry, relPath) {
+  const clean = String(relPath || "").replaceAll("\\", "/").replace(/^\/+/, "");
+  if (["events/task-events.jsonl", "reviews/task-reviews.jsonl"].includes(clean)) return `${clean} is append-only; use add event or review task`;
+  for (const [taskId, ref] of Object.entries(registry.tasks || {})) {
+    if (ref.path === clean && HISTORICAL_TASK_STATUSES.has(ref.status || "")) return `${taskId} is ${ref.status}; completed task records are historical`;
+  }
+  for (const [docId, doc] of Object.entries(registry.docs || {})) {
+    if (doc.path === clean && HISTORICAL_DOC_STATUSES.has(doc.status || "draft")) return `${docId} is ${doc.status}; finalized docs are historical`;
+  }
+  return "";
+}
+
+function ensureEditAllowed(registry, relPath, payload) {
+  const reason = historicalEditReason(registry, relPath);
+  if (reason && !payload.allow_historical_edit) throw new Error(`refusing to edit historical record: ${reason}. Create a project note, decision, or errata instead.`);
+}
+
 async function loadTaskRecord(registry, taskId) {
   const ref = registry.tasks?.[taskId];
   if (!ref) throw new Error(`missing task ${taskId}`);
@@ -308,6 +334,7 @@ async function reviewAction(record) {
 async function updateTaskActions(registry, payload) {
   const taskId = payload.task_id || "";
   const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to update ${taskId}; ${task.status} tasks are historical. Use review workflow or create a project note/decision for later context.`);
   for (const field of ["status", "checkpoint", "priority", "assigned_to", "deadline", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]) {
     if (payload[field]) task[field] = payload[field];
   }
@@ -372,6 +399,7 @@ async function proposalActions(payload) {
     const filePath = String(payload.path || "").replaceAll("\\", "/").replace(/^\/+/, "");
     if (!filePath) throw new Error("edit_file requires path");
     const full = safeRepoPath(filePath);
+    ensureEditAllowed(await loadRegistry(), filePath, payload);
     return { title: payload.message || `Edit ${filePath}`, message: payload.message || `Edit ${filePath}`, actions: [{ action: existsSync(full) ? "update" : "create", file_path: filePath, content: payload.content || "" }] };
   }
   if (payload.type === "create_task") {

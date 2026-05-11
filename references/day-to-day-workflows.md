@@ -10,6 +10,7 @@ Daily read path:
 git pull
 git_pm.py compile --repo .
 git_pm.py validate --repo .
+git_pm.py audit-docs --repo .
 ```
 
 Typical updates:
@@ -17,10 +18,13 @@ Typical updates:
 ```powershell
 git_pm.py create-task --repo . --project-id PROJ1 --title "Prepare Friday playtest checklist" --assigned-to "Maya" --role "Project Manager" --expected-output "Playtest Plan"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type playtest-plan --title "Friday Playtest Plan" --owner "Maya"
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type meeting-notes --title "Sprint Planning 2026-05-11" --owner "Maya"
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type weekly-update --title "Week 20 Project Update" --owner "Maya"
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type risk-log --title "Release Risk Log" --owner "Maya"
 git_pm.py add-event --repo . --task-id TASK8 --actor "Maya" --event-type "planning" --message "Checklist ready for design and QA review."
 ```
 
-PMs should review validation warnings, stale blockers, missing outputs, and tasks waiting for review.
+PMs should review validation warnings, audit warnings, stale blockers, missing outputs, and tasks waiting for review. Meeting notes, weekly updates, project notes, risk logs, and retrospectives belong in `docs/notes/`; durable decisions belong in `docs/decisions/`.
 
 ## Game Designer
 
@@ -36,6 +40,7 @@ Typical updates:
 ```powershell
 git_pm.py update-task --repo . --task-id TASK2 --actor "Gina" --status "In Progress" --user-update "Testing two ability cooldown curves against the latest playtest notes."
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type game-design --title "Ability Tuning Notes" --owner "Gina"
+git_pm.py create-doc --repo . --project-id PROJ1 --doc-type project-note --title "Ability Terminology Follow-up" --owner "Gina"
 git_pm.py submit-output --repo . --task-id TASK2 --actor "Gina" --output "projects/PROJ1-demo-game-hub/docs/design/DOC9-ability-tuning-notes.md" --message "Ready for programmer implementation review."
 ```
 
@@ -156,3 +161,9 @@ The website exposes the same flows:
 - `Create`: create tasks/docs, register assets, and propose raw file edits.
 
 In dry-run mode, proposals are written under `.project-hub/proposals/`. In live mode, they become GitHub PRs or GitLab MRs.
+
+## Live And Completed Documents
+
+Use live docs for the current truth: project READMEs, `project.yaml`, active specs, current risk logs, weekly updates, and open notes. These should be updated when terminology, scope, owners, links, or repo state changes.
+
+Use completed records as historical evidence: `Done` or `Verified` task folders, finalized meeting notes, archived reports, event logs, and review logs. Do not rewrite old completed files to match a new naming decision. If `heroes` becomes `champions`, update the live docs and create a `decision` or `project-note`; leave an old completed task such as `Create hero Athena` untouched.

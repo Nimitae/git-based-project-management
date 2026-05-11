@@ -69,6 +69,7 @@ def main() -> int:
     try:
         run([sys.executable, str(CONTROLLER), "init", "--repo", str(repo), "--name", "Node Demo Hub", "--owner", "Terence"])
         run([sys.executable, str(CONTROLLER), "validate", "--repo", str(repo)])
+        run([sys.executable, str(CONTROLLER), "audit-docs", "--repo", str(repo)])
         port = free_port()
         env = os.environ.copy()
         for key in ["GPM_LIVE_PROPOSALS", "GPM_PROVIDER", "GPM_GITHUB_REPO", "GPM_GITHUB_TOKEN", "GPM_GITLAB_PROJECT", "GPM_GITLAB_TOKEN"]:
@@ -121,11 +122,23 @@ def main() -> int:
                 "owner": "Terence",
             },
         )
+        doc_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "create_doc",
+                "project_id": "PROJ1",
+                "title": "Node Smoke Meeting Notes",
+                "owner": "Terence",
+                "doc_type": "meeting-notes",
+            },
+        )
         proposal_dir = Path(proposal.get("proposal_dir", ""))
         if not proposal_dir.exists():
             raise RuntimeError(f"proposal directory was not created: {proposal}")
         if not Path(asset_proposal.get("proposal_dir", "")).exists():
             raise RuntimeError(f"asset proposal directory was not created: {asset_proposal}")
+        if not Path(doc_proposal.get("proposal_dir", "")).exists():
+            raise RuntimeError(f"doc proposal directory was not created: {doc_proposal}")
         with request.urlopen(base + "/", timeout=10) as response:
             html = response.read().decode("utf-8")
         if "Project Workspace" not in html:

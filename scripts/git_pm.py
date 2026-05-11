@@ -7,6 +7,7 @@ import argparse
 import base64
 import copy
 import datetime as dt
+import fnmatch
 import hashlib
 import json
 import mimetypes
@@ -45,7 +46,15 @@ DOC_TYPES = {
     "postmortem",
     "decision",
     "meeting-notes",
+    "project-note",
+    "weekly-update",
+    "risk-log",
+    "retro-notes",
 }
+DOC_STATUSES = {"draft", "live", "review", "final", "archived", "historical"}
+LIVE_DOC_STATUSES = {"draft", "live", "review"}
+HISTORICAL_DOC_STATUSES = {"final", "archived", "historical"}
+HISTORICAL_TASK_STATUSES = {"Done", "Verified", "Iceboxed"}
 DOC_SECTION_REQUIREMENTS = {
     "proposal": ["Problem", "Proposed Direction", "Risks", "Decision Needed"],
     "brief": ["Goal", "Audience", "Scope", "Success Criteria"],
@@ -66,6 +75,10 @@ DOC_SECTION_REQUIREMENTS = {
     "postmortem": ["Outcome", "What Worked", "What Did Not", "Actions"],
     "decision": ["Context", "Decision", "Options Considered", "Consequences"],
     "meeting-notes": ["Attendees", "Discussion", "Decisions", "Actions"],
+    "project-note": ["Context", "Note", "Links", "Follow-up"],
+    "weekly-update": ["Highlights", "Progress", "Risks", "Next Week"],
+    "risk-log": ["Risk", "Impact", "Mitigation", "Owner"],
+    "retro-notes": ["What Worked", "What Did Not", "Actions", "Owners"],
 }
 ID_PREFIX = {
     "project": "PROJ",
@@ -225,7 +238,9 @@ def doc_folder(doc_type: str) -> str:
         return "production"
     if doc_type in {"release-plan", "postmortem"}:
         return "release"
-    if doc_type in {"decision", "meeting-notes"}:
+    if doc_type == "decision":
+        return "decisions"
+    if doc_type in {"meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"}:
         return "notes"
     return "docs"
 
@@ -273,6 +288,36 @@ def doc_body_template(doc_type: str) -> str:
             "Feedback": "Record design, art, engineering, and PM feedback.",
             "Decision": "State approved direction or requested revision.",
             "Follow-up Tasks": "Link generated tasks or owners.",
+        },
+        "meeting-notes": {
+            "Attendees": "List attendees and roles.",
+            "Discussion": "Capture durable discussion points, not a transcript.",
+            "Decisions": "List decisions or link decision records.",
+            "Actions": "List action items with owners and task IDs.",
+        },
+        "project-note": {
+            "Context": "State why the note matters and which project area it affects.",
+            "Note": "Write the durable project note.",
+            "Links": "Link related docs, tasks, assets, meetings, or repos.",
+            "Follow-up": "List follow-up tasks or owners.",
+        },
+        "weekly-update": {
+            "Highlights": "Summarize important progress and outcomes.",
+            "Progress": "List shipped, reviewed, and in-progress work.",
+            "Risks": "List blockers, schedule risk, quality risk, or dependency risk.",
+            "Next Week": "State focus areas and expected outputs.",
+        },
+        "risk-log": {
+            "Risk": "Describe the risk clearly.",
+            "Impact": "Explain project impact if it happens.",
+            "Mitigation": "State mitigation or contingency.",
+            "Owner": "Name the owner and review date.",
+        },
+        "retro-notes": {
+            "What Worked": "List practices or decisions to keep.",
+            "What Did Not": "List problems without blame.",
+            "Actions": "List concrete changes.",
+            "Owners": "Assign owners and target dates.",
         },
     }
     lines = []
@@ -441,6 +486,7 @@ Add implementation repositories in `project.yaml` so collaborators and agents kn
     write_text(repo / "reviews/task-reviews.jsonl", "")
     write_text(repo / "policies/output-requirements.yaml", dump(default_output_policy()))
     write_text(repo / "policies/wiki-guidelines.md", wiki_guidelines_doc())
+    write_text(repo / "policies/terminology.yaml", dump(default_terminology_policy()))
     (repo / ".project-hub/site-data").mkdir(parents=True, exist_ok=True)
 
 
@@ -469,6 +515,23 @@ def default_output_policy() -> dict:
     }
 
 
+def default_terminology_policy() -> dict:
+    return {
+        "schema_version": 1,
+        "review_scope": "live-docs-and-master-files",
+        "skip_paths": ["registry.yaml", "policies/*"],
+        "allowed_occurrences": [],
+        "preferred_terms": [
+            {
+                "preferred": "champion",
+                "avoid": ["hero", "heroes"],
+                "note": "Example only. Replace or remove based on project terminology decisions.",
+                "enabled": False,
+            }
+        ],
+    }
+
+
 def wiki_guidelines_doc() -> str:
     doc_types = "\n".join(f"- `{doc_type}`: {', '.join(DOC_SECTION_REQUIREMENTS.get(doc_type, ['Purpose', 'Context', 'Content']))}" for doc_type in sorted(DOC_TYPES))
     return f"""# Wiki Guidelines
@@ -493,6 +556,21 @@ Every document H1 should start with the document ID, such as `# DOC7 - Core Loop
 ## Required Sections
 
 {doc_types}
+
+## Live Documents Versus Historical Records
+
+Live documents are the current source of truth and should be kept consistent when terminology, scope, or ownership changes. Examples: project README files, `project.yaml`, live design specs, current technical specs, active risk logs, and weekly updates.
+
+Historical records are evidence of what happened at the time and should not be rewritten for terminology cleanup. Examples: completed task YAML, verified task output records, finalized meeting notes, archived reports, review logs, and event logs.
+
+If `heroes` is renamed to `champions`, update live docs and master files. Do not rewrite an old completed task such as `Create hero Athena`; instead add a decision record or project note explaining the terminology change.
+
+Use statuses:
+
+- `draft`, `live`, `review`: editable current docs.
+- `final`, `archived`, `historical`: protected historical docs.
+
+Use `policies/terminology.yaml` for terminology changes that should be enforced in live docs. Do not make the audit scan force changes to historical task titles. If a live overview must quote an old completed task name, add a narrow `allowed_occurrences` entry with the exact quoted text and a reason.
 
 ## Tasks
 
@@ -571,6 +649,8 @@ def validate_repo(repo: Path) -> list[dict]:
             issues.append(issue("error", "REL_DOC_PROJECT", f"{doc_id} references missing project {doc.get('project_id')}", doc.get("path", "")))
         if doc.get("doc_type") not in DOC_TYPES:
             issues.append(issue("warn", "DOC_TYPE", f"{doc_id} has unusual doc_type {doc.get('doc_type')}", doc.get("path", "")))
+        if doc.get("status", "draft") not in DOC_STATUSES:
+            issues.append(issue("warn", "DOC_STATUS", f"{doc_id} has unusual status {doc.get('status')}", doc.get("path", "")))
         full = safe_repo_path(repo, doc.get("path", ""))
         if full.exists():
             frontmatter, body = parse_frontmatter(read_text(full))
@@ -615,7 +695,7 @@ def validate_repo(repo: Path) -> list[dict]:
             issues.append(issue("error", "ASSET_ID_FORMAT", f"{asset_id} should match ASSET#", "registry.yaml"))
         if not asset.get("path") and not asset.get("source_url"):
             issues.append(issue("warn", "ASSET_LINK_MISSING", f"{asset_id} has no path or source_url", "registry.yaml"))
-    for rel in ["policies/output-requirements.yaml"]:
+    for rel in ["policies/output-requirements.yaml", "policies/wiki-guidelines.md", "policies/terminology.yaml"]:
         if not safe_repo_path(repo, rel).exists():
             issues.append(issue("warn", "POLICY_MISSING", f"{rel} is missing", rel))
     return issues
@@ -702,6 +782,90 @@ def cmd_compile(args: argparse.Namespace) -> int:
     return 1 if any(item["level"] == "error" for item in data["validation"]["issues"]) else 0
 
 
+def live_document_paths(registry: dict) -> list[str]:
+    paths = ["README.md", "registry.yaml", "policies/wiki-guidelines.md", "policies/output-requirements.yaml", "policies/terminology.yaml"]
+    for project in registry.get("projects", {}).values():
+        for key in ["readme", "path"]:
+            if project.get(key):
+                paths.append(project[key])
+    for doc in registry.get("docs", {}).values():
+        if doc.get("status", "draft") in LIVE_DOC_STATUSES and doc.get("path"):
+            paths.append(doc["path"])
+    return list(dict.fromkeys(paths))
+
+
+def terminology_policy(repo: Path) -> dict:
+    return read_json_subset(repo / "policies/terminology.yaml", {"preferred_terms": [], "skip_paths": [], "allowed_occurrences": []})
+
+
+def terminology_rules(policy: dict) -> list[dict]:
+    return [rule for rule in policy.get("preferred_terms", []) if rule.get("enabled", True)]
+
+
+def path_matches_any(rel: str, patterns: list[str]) -> bool:
+    clean = rel.replace("\\", "/").lstrip("/")
+    return any(fnmatch.fnmatch(clean, pattern.replace("\\", "/").lstrip("/")) for pattern in patterns)
+
+
+def occurrence_allowed(policy: dict, rel: str, term: str, text: str, start: int) -> bool:
+    for item in policy.get("allowed_occurrences", []) or []:
+        if str(item.get("term", "")).lower() != str(term).lower() or not path_matches_any(rel, [str(item.get("path", ""))]):
+            continue
+        exact = str(item.get("text", "")).strip()
+        if not exact:
+            return True
+        for match in re.finditer(re.escape(exact), text, re.IGNORECASE):
+            if match.start() <= start < match.end():
+                return True
+    return False
+
+
+def audit_docs(repo: Path) -> list[dict]:
+    issues = validate_repo(repo)
+    if not registry_path(repo).exists():
+        return issues
+    registry = load_registry(repo)
+    for rel in live_document_paths(registry):
+        if not safe_repo_path(repo, rel).exists():
+            issues.append(issue("warn", "MASTER_FILE_MISSING", f"expected live/master file is missing: {rel}", rel))
+    policy = terminology_policy(repo)
+    skip_paths = list(policy.get("skip_paths", []) or []) + ["registry.yaml", "policies/terminology.yaml"]
+    scan_paths = [rel for rel in live_document_paths(registry) if not path_matches_any(rel, skip_paths)]
+    for rule in terminology_rules(policy):
+        preferred = rule.get("preferred", "")
+        for avoid in rule.get("avoid", []) or []:
+            pattern = re.compile(rf"\b{re.escape(str(avoid))}\b", re.IGNORECASE)
+            for rel in scan_paths:
+                path = safe_repo_path(repo, rel)
+                if not path.exists() or path.is_dir():
+                    continue
+                text = read_text(path)
+                if any(not occurrence_allowed(policy, rel, str(avoid), text, match.start()) for match in pattern.finditer(text)):
+                    issues.append(issue("warn", "TERMINOLOGY_DRIFT", f"use '{preferred}' instead of '{avoid}' in live/master file", rel))
+    for task_id, ref in registry.get("tasks", {}).items():
+        if ref.get("status") in HISTORICAL_TASK_STATUSES:
+            continue
+        path = ref.get("path", "")
+        if path:
+            task = read_json_subset(safe_repo_path(repo, path), {})
+            if task.get("status") == "Blocked" and not task.get("blocker"):
+                issues.append(issue("warn", "BLOCKED_TASK_DETAIL", f"{task_id} is blocked without blocker detail", path))
+    return issues
+
+
+def cmd_audit_docs(args: argparse.Namespace) -> int:
+    issues = audit_docs(repo_arg(args.repo))
+    if args.json:
+        print(json.dumps({"issues": issues}, indent=2))
+    else:
+        if not issues:
+            print("Document audit passed.")
+        for item in issues:
+            location = f" [{item['path']}]" if item.get("path") else ""
+            print(f"{item['level'].upper()} {item['code']}: {item['message']}{location}")
+    return 1 if any(item["level"] == "error" for item in issues) else 0
+
+
 def cmd_create_project(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
     registry = load_registry(repo)
@@ -774,6 +938,29 @@ def load_task_record(repo: Path, registry: dict, task_id: str) -> tuple[str, dic
     return path, task
 
 
+def historical_edit_reason(registry: dict, rel: str) -> str:
+    clean = rel.replace("\\", "/").lstrip("/")
+    if clean in {"events/task-events.jsonl", "reviews/task-reviews.jsonl"}:
+        return f"{clean} is append-only; use add-event or review-task"
+    for task_id, ref in registry.get("tasks", {}).items():
+        if ref.get("path") == clean:
+            status = ref.get("status", "")
+            if status in HISTORICAL_TASK_STATUSES:
+                return f"{task_id} is {status}; completed task records are historical"
+    for doc_id, doc in registry.get("docs", {}).items():
+        if doc.get("path") == clean:
+            status = doc.get("status", "draft")
+            if status in HISTORICAL_DOC_STATUSES:
+                return f"{doc_id} is {status}; finalized docs are historical"
+    return ""
+
+
+def ensure_edit_allowed(registry: dict, rel: str, payload: dict) -> None:
+    reason = historical_edit_reason(registry, rel)
+    if reason and not payload.get("allow_historical_edit"):
+        raise GitPMError(f"refusing to edit historical record: {reason}. Create a project-note/decision/errata or reopen through review workflow instead.")
+
+
 def sync_task_ref(registry: dict, task_id: str, path: str, task: dict) -> None:
     registry.setdefault("tasks", {})[task_id] = {
         "project_id": task.get("project_id", ""),
@@ -811,6 +998,8 @@ def review_action(repo: Path, record: dict) -> dict:
 def update_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
     task_id = payload.get("task_id", "")
     path, task = load_task_record(repo, registry, task_id)
+    if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
+        raise GitPMError(f"refusing to update {task_id}; {task.get('status')} tasks are historical. Use review-task to request changes or create a project-note/decision for later context.")
     for field in ["status", "checkpoint", "priority", "assigned_to", "deadline", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]:
         value = payload.get(field)
         if value not in (None, ""):
@@ -1073,6 +1262,7 @@ def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
         if not rel:
             raise GitPMError("edit_file requires path")
         safe_repo_path(repo, rel)
+        ensure_edit_allowed(load_registry(repo), rel, payload)
         action = "update" if (repo / rel).exists() else "create"
         return title, message, [{"action": action, "file_path": rel, "content": payload.get("content", "")}]
     if change_type == "create_task":
@@ -1420,6 +1610,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_repo(p)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_compile)
+
+    p = sub.add_parser("audit-docs")
+    add_common_repo(p)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_audit_docs)
 
     p = sub.add_parser("website")
     add_common_repo(p)
