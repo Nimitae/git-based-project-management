@@ -52,12 +52,16 @@ Use these types unless a team extends the schema:
 - `brief`
 - `game-design`
 - `technical-spec`
+- `frontend-spec`
+- `backend-spec`
 - `playtest-plan`
 - `playtest-report`
 - `qa-report`
 - `research-report`
 - `asset-brief`
+- `3d-asset-brief`
 - `video-brief`
+- `mockup-review`
 - `build-note`
 - `release-plan`
 - `postmortem`

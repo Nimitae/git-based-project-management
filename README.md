@@ -60,6 +60,12 @@ The local website will be available at:
 http://127.0.0.1:8787/
 ```
 
+Generate a realistic game-team demo workspace:
+
+```powershell
+python scripts/git_pm.py demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
+```
+
 ## Node.js Website
 
 The deployable website runtime is in `assets/website`.
@@ -109,6 +115,7 @@ python scripts/node_website_smoke_test.py
 - Durable changes go through pull requests or merge requests.
 - The website is a human interface over Git, not the canonical database.
 - IDs are allocated by the controller or website backend, then validated before merge.
+- Day-to-day task updates use `update-task`, `add-event`, `submit-output`, `review-task`, and `register-asset`.
 - Large videos, builds, source art, and captures should live in Git LFS, releases/packages, object storage, or implementation repos, with references tracked in asset manifests.
 
-See `references/architecture.md`, `references/schemas.md`, and `references/website.md` for the detailed model.
+See `references/architecture.md`, `references/schemas.md`, `references/wiki-guidelines.md`, `references/day-to-day-workflows.md`, and `references/website.md` for the detailed model.

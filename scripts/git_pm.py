@@ -30,17 +30,42 @@ DOC_TYPES = {
     "brief",
     "game-design",
     "technical-spec",
+    "frontend-spec",
+    "backend-spec",
     "playtest-plan",
     "playtest-report",
     "qa-report",
     "research-report",
     "asset-brief",
+    "3d-asset-brief",
     "video-brief",
+    "mockup-review",
     "build-note",
     "release-plan",
     "postmortem",
     "decision",
     "meeting-notes",
+}
+DOC_SECTION_REQUIREMENTS = {
+    "proposal": ["Problem", "Proposed Direction", "Risks", "Decision Needed"],
+    "brief": ["Goal", "Audience", "Scope", "Success Criteria"],
+    "game-design": ["Player Fantasy", "Core Loop", "Systems", "UX Notes", "Tuning Questions"],
+    "technical-spec": ["Goal", "Architecture", "Interfaces", "Test Plan", "Rollout"],
+    "frontend-spec": ["User Flow", "State", "Components", "API Contract", "Test Plan"],
+    "backend-spec": ["Goal", "Data Model", "API", "Operations", "Test Plan"],
+    "playtest-plan": ["Build", "Participants", "Test Goals", "Tasks", "Capture Plan"],
+    "playtest-report": ["Build", "Participants", "Findings", "Evidence", "Recommended Changes"],
+    "qa-report": ["Build", "Scope", "Defects", "Risks", "Release Recommendation"],
+    "research-report": ["Question", "Method", "Findings", "Recommendation"],
+    "asset-brief": ["Purpose", "References", "Requirements", "Format", "Delivery"],
+    "3d-asset-brief": ["Purpose", "References", "Model Requirements", "Texture Requirements", "Delivery"],
+    "video-brief": ["Goal", "Audience", "Script/Beats", "Assets Needed", "Delivery Specs"],
+    "mockup-review": ["Context", "Mockups", "Feedback", "Decision", "Follow-up Tasks"],
+    "build-note": ["Build", "Changes", "Known Issues", "Verification"],
+    "release-plan": ["Scope", "Risks", "Checklist", "Rollback"],
+    "postmortem": ["Outcome", "What Worked", "What Did Not", "Actions"],
+    "decision": ["Context", "Decision", "Options Considered", "Consequences"],
+    "meeting-notes": ["Attendees", "Discussion", "Decisions", "Actions"],
 }
 ID_PREFIX = {
     "project": "PROJ",
@@ -192,17 +217,78 @@ def project_folder(project_id: str, name: str) -> str:
 def doc_folder(doc_type: str) -> str:
     if doc_type in {"proposal", "brief"}:
         return "proposals"
-    if doc_type in {"game-design", "technical-spec"}:
+    if doc_type in {"game-design", "technical-spec", "frontend-spec", "backend-spec"}:
         return "design"
     if doc_type in {"playtest-plan", "playtest-report", "qa-report", "research-report"}:
         return "reports"
-    if doc_type in {"asset-brief", "video-brief", "build-note"}:
+    if doc_type in {"asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note"}:
         return "production"
     if doc_type in {"release-plan", "postmortem"}:
         return "release"
     if doc_type in {"decision", "meeting-notes"}:
         return "notes"
     return "docs"
+
+
+def doc_body_template(doc_type: str) -> str:
+    sections = DOC_SECTION_REQUIREMENTS.get(doc_type, ["Purpose", "Context", "Content", "Open Questions"])
+    details = {
+        "proposal": {
+            "Problem": "What problem or opportunity should the team act on?",
+            "Proposed Direction": "What should change, and what alternatives were considered?",
+            "Risks": "List product, technical, schedule, art, or dependency risks.",
+            "Decision Needed": "State the specific approval or decision needed.",
+        },
+        "game-design": {
+            "Player Fantasy": "Describe the intended player experience.",
+            "Core Loop": "Describe the repeated actions, rewards, and failure states.",
+            "Systems": "List mechanics, rules, tuning variables, and dependencies.",
+            "UX Notes": "Call out controls, HUD, onboarding, feedback, and accessibility.",
+            "Tuning Questions": "List open balance questions for implementation or playtest.",
+        },
+        "frontend-spec": {
+            "User Flow": "Describe screen flow, states, and edge cases.",
+            "State": "List client state, persistence, loading, and error handling.",
+            "Components": "List UI components, props, and ownership.",
+            "API Contract": "Link backend endpoints, mocks, or fixtures.",
+            "Test Plan": "List unit, integration, visual, and browser checks.",
+        },
+        "backend-spec": {
+            "Goal": "Describe service behavior and user impact.",
+            "Data Model": "List entities, migrations, retention, and ownership.",
+            "API": "Document endpoints, events, auth, errors, and rate limits.",
+            "Operations": "List observability, rollout, backfill, and failure handling.",
+            "Test Plan": "List automated and manual verification.",
+        },
+        "playtest-report": {
+            "Build": "Link the build, branch, platform, and capture folder.",
+            "Participants": "Summarize participant profile and session count.",
+            "Findings": "Group findings by severity and player impact.",
+            "Evidence": "Link clips, screenshots, notes, telemetry, or survey data.",
+            "Recommended Changes": "Create or link follow-up tasks.",
+        },
+        "mockup-review": {
+            "Context": "State the feature, screen, user goal, and constraints.",
+            "Mockups": "Link images, Figma frames, video captures, or prototypes.",
+            "Feedback": "Record design, art, engineering, and PM feedback.",
+            "Decision": "State approved direction or requested revision.",
+            "Follow-up Tasks": "Link generated tasks or owners.",
+        },
+    }
+    lines = []
+    for section in sections:
+        lines.append(f"## {section}\n")
+        lines.append(details.get(doc_type, {}).get(section, "TBD"))
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def markdown_h2_sections(body: str) -> set[str]:
+    sections = set()
+    for line in body.splitlines():
+        if line.startswith("## "):
+            sections.add(line[3:].strip())
+    return sections
 
 
 def make_project_record(project_id: str, name: str, owner: str, project_type: str, status: str) -> dict:
@@ -232,12 +318,14 @@ def make_task(task_id: str, project_id: str, project_name: str, title: str, assi
         "role": role or "",
         "status": "Backlog",
         "checkpoint": "Drafting",
+        "priority": "Medium",
         "deadline": "",
         "expected_output": expected_output,
         "acceptance_criteria": ["Repository validates", "Website loads locally"],
         "dependencies": [],
         "target_repo": "",
         "output": "",
+        "blocker": "",
         "ai_update": "",
         "user_update": "",
     }
@@ -264,23 +352,7 @@ def make_doc(doc_id: str, project: dict, doc_type: str, title: str, owner: str) 
             "status": "draft",
         },
         f"{doc_id} - {title}",
-        """
-## Purpose
-
-State why this document exists and what decision or work it supports.
-
-## Context
-
-Link relevant tasks, repos, builds, references, videos, reports, or assets.
-
-## Content
-
-Write the proposal, design, report, or decision here.
-
-## Open Questions
-
-- TBD
-""",
+        doc_body_template(doc_type),
     )
     ref = {"project_id": project["id"], "doc_type": doc_type, "title": title, "owner": owner, "path": rel, "status": "draft"}
     return rel, text, ref
@@ -327,6 +399,7 @@ Use it to track project state, tasks, proposals, design docs, playtest reports, 
 - `templates/`: document and task templates.
 - `events/task-events.jsonl`: append-only collaboration updates.
 - `reviews/task-reviews.jsonl`: append-only output reviews.
+- `policies/wiki-guidelines.md`: required wiki shapes and task/asset linking rules.
 
 Agents and humans should make durable changes through pull requests or merge requests.
 """,
@@ -367,20 +440,15 @@ Add implementation repositories in `project.yaml` so collaborators and agents kn
     write_text(repo / "events/task-events.jsonl", "")
     write_text(repo / "reviews/task-reviews.jsonl", "")
     write_text(repo / "policies/output-requirements.yaml", dump(default_output_policy()))
+    write_text(repo / "policies/wiki-guidelines.md", wiki_guidelines_doc())
     (repo / ".project-hub/site-data").mkdir(parents=True, exist_ok=True)
 
 
 def template_files() -> dict[str, str]:
-    return {
-        "templates/proposal.md": "# Proposal\n\n## Problem\n\n## Proposed Direction\n\n## Risks\n\n## Decision Needed\n",
-        "templates/game-design.md": "# Game Design\n\n## Player Fantasy\n\n## Core Loop\n\n## Systems\n\n## UX Notes\n\n## Tuning Questions\n",
-        "templates/technical-spec.md": "# Technical Spec\n\n## Goal\n\n## Architecture\n\n## Interfaces\n\n## Test Plan\n\n## Rollout\n",
-        "templates/playtest-report.md": "# Playtest Report\n\n## Build\n\n## Participants\n\n## Findings\n\n## Evidence\n\n## Recommended Changes\n",
-        "templates/qa-report.md": "# QA Report\n\n## Build\n\n## Scope\n\n## Defects\n\n## Risks\n\n## Release Recommendation\n",
-        "templates/asset-brief.md": "# Asset Brief\n\n## Purpose\n\n## References\n\n## Requirements\n\n## Format\n\n## Delivery\n",
-        "templates/video-brief.md": "# Video Brief\n\n## Goal\n\n## Audience\n\n## Script/Beats\n\n## Assets Needed\n\n## Delivery Specs\n",
-        "templates/task.yaml": dump(make_task("TASK#", "PROJ#", "project", "Task title", "Owner", "Role", "Expected Output")[1]),
-    }
+    files = {f"templates/{doc_type}.md": f"# {doc_type.replace('-', ' ').title()}\n\n{doc_body_template(doc_type)}\n" for doc_type in sorted(DOC_TYPES)}
+    files["templates/task.yaml"] = dump(make_task("TASK#", "PROJ#", "project", "Task title", "Owner", "Role", "Expected Output")[1])
+    files["templates/asset.yaml"] = dump({"title": "Asset title", "type": "mockup", "storage": "external-link", "path": "", "source_url": "", "used_by": ["PROJ#"], "owner": "Owner"})
+    return files
 
 
 def default_output_policy() -> dict:
@@ -399,6 +467,43 @@ def default_output_policy() -> dict:
             "Pull Request": {"matches": ["Pull Request", "Merge Request", "Implementation PR", "Implementation MR"], "manual_checks": ["PR/MR links to task", "Verification notes are present"]},
         },
     }
+
+
+def wiki_guidelines_doc() -> str:
+    doc_types = "\n".join(f"- `{doc_type}`: {', '.join(DOC_SECTION_REQUIREMENTS.get(doc_type, ['Purpose', 'Context', 'Content']))}" for doc_type in sorted(DOC_TYPES))
+    return f"""# Wiki Guidelines
+
+## Project README
+
+Every project README must include:
+
+- `State`: status, current focus, next review, and blockers.
+- `Repositories`: implementation repos and ownership.
+- `Documents`: canonical docs grouped by purpose.
+- `Tasks`: active task IDs and owners.
+- `Assets`: important mockups, videos, builds, art, models, captures, and external links.
+- `Operating Notes`: cadence, review expectations, and constraints.
+
+## Documents
+
+Every durable document must be Markdown with frontmatter containing `id`, `project_id`, `type`, `owner`, and `status`.
+
+Every document H1 should start with the document ID, such as `# DOC7 - Core Loop Design`.
+
+## Required Sections
+
+{doc_types}
+
+## Tasks
+
+Every task should have an owner, status, expected output, acceptance criteria, and an output link before it can be verified.
+
+Use `events/task-events.jsonl` for daily notes and handoffs. Use task YAML for durable task state.
+
+## Assets
+
+Register important assets in `assets/assets.yaml` and `registry.yaml`. Large files should live in Git LFS, releases/packages, object storage, or implementation repos.
+"""
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -473,6 +578,12 @@ def validate_repo(repo: Path) -> list[dict]:
                 issues.append(issue("error", "DOC_ID_MISMATCH", f"{doc.get('path')} frontmatter id should be {doc_id}", doc.get("path", "")))
             if not markdown_title(body, ""):
                 issues.append(issue("warn", "DOC_TITLE_MISSING", f"{doc.get('path')} has no H1 title", doc.get("path", "")))
+            required_sections = DOC_SECTION_REQUIREMENTS.get(doc.get("doc_type", ""))
+            if required_sections:
+                present = markdown_h2_sections(body)
+                for section in required_sections:
+                    if section not in present:
+                        issues.append(issue("warn", "DOC_SECTION_MISSING", f"{doc_id} is missing section '{section}'", doc.get("path", "")))
     for task_id, task_ref in registry.get("tasks", {}).items():
         path = task_ref.get("path", "")
         try:
@@ -492,9 +603,18 @@ def validate_repo(repo: Path) -> list[dict]:
             issues.append(issue("warn", "TASK_ASSIGNEE_MISSING", f"{task_id} has no assignee", path))
         if task.get("status") not in {"Iceboxed", "Verified"} and not task.get("expected_output"):
             issues.append(issue("warn", "TASK_EXPECTED_OUTPUT_MISSING", f"{task_id} has no expected_output", path))
+        if task.get("status") == "Blocked" and not task.get("blocker"):
+            issues.append(issue("warn", "TASK_BLOCKER_MISSING", f"{task_id} is blocked without blocker detail", path))
+        if task.get("status") in {"Done", "Verified"} and not task.get("output"):
+            issues.append(issue("warn", "TASK_OUTPUT_MISSING", f"{task_id} is {task.get('status')} without output link", path))
         for dep in task.get("dependencies", []) or []:
             if dep not in registry.get("tasks", {}):
                 issues.append(issue("error", "REL_TASK_DEPENDENCY", f"{task_id} depends on missing {dep}", path))
+    for asset_id, asset in registry.get("assets", {}).items():
+        if not re.fullmatch(r"ASSET\d+", asset_id):
+            issues.append(issue("error", "ASSET_ID_FORMAT", f"{asset_id} should match ASSET#", "registry.yaml"))
+        if not asset.get("path") and not asset.get("source_url"):
+            issues.append(issue("warn", "ASSET_LINK_MISSING", f"{asset_id} has no path or source_url", "registry.yaml"))
     for rel in ["policies/output-requirements.yaml"]:
         if not safe_repo_path(repo, rel).exists():
             issues.append(issue("warn", "POLICY_MISSING", f"{rel} is missing", rel))
@@ -565,6 +685,7 @@ def compile_data(repo: Path) -> dict:
         "projects": [{"id": key, **value} for key, value in registry.get("projects", {}).items()],
         "docs": collect_docs(repo, registry),
         "tasks": collect_tasks(repo, registry),
+        "assets": [{"id": key, **value} for key, value in registry.get("assets", {}).items()],
         "people": registry.get("people", []),
         "events": read_jsonl(repo / "events/task-events.jsonl"),
         "reviews": read_jsonl(repo / "reviews/task-reviews.jsonl"),
@@ -630,6 +751,319 @@ def cmd_create_doc(args: argparse.Namespace) -> int:
     return 0
 
 
+def split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def append_jsonl(existing: str, record: dict) -> str:
+    prefix = existing.rstrip("\n")
+    line = json.dumps(record, ensure_ascii=False)
+    return f"{prefix}\n{line}\n" if prefix else f"{line}\n"
+
+
+def load_task_record(repo: Path, registry: dict, task_id: str) -> tuple[str, dict]:
+    ref = registry.get("tasks", {}).get(task_id)
+    if not ref:
+        raise GitPMError(f"missing task {task_id}")
+    path = ref.get("path", "")
+    task = read_json_subset(safe_repo_path(repo, path), {})
+    if task.get("id") != task_id:
+        raise GitPMError(f"{path} id is {task.get('id')}, expected {task_id}")
+    return path, task
+
+
+def sync_task_ref(registry: dict, task_id: str, path: str, task: dict) -> None:
+    registry.setdefault("tasks", {})[task_id] = {
+        "project_id": task.get("project_id", ""),
+        "path": path,
+        "title": task.get("title", ""),
+        "assigned_to": task.get("assigned_to", ""),
+        "status": task.get("status", "Backlog"),
+        "expected_output": task.get("expected_output", ""),
+    }
+
+
+def make_event(registry: dict, task: dict, actor: str, event_type: str, message: str) -> dict:
+    event_id = allocate_id(registry, "event")
+    return {
+        "id": event_id,
+        "task_id": task.get("id", ""),
+        "project_id": task.get("project_id", ""),
+        "actor": actor or "Unknown",
+        "event_type": event_type or "update",
+        "message": message or "",
+        "created_at": now_iso(),
+    }
+
+
+def event_action(repo: Path, record: dict) -> dict:
+    rel = "events/task-events.jsonl"
+    return {"action": "update" if (repo / rel).exists() else "create", "file_path": rel, "content": append_jsonl(read_text(repo / rel), record)}
+
+
+def review_action(repo: Path, record: dict) -> dict:
+    rel = "reviews/task-reviews.jsonl"
+    return {"action": "update" if (repo / rel).exists() else "create", "file_path": rel, "content": append_jsonl(read_text(repo / rel), record)}
+
+
+def update_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    task_id = payload.get("task_id", "")
+    path, task = load_task_record(repo, registry, task_id)
+    for field in ["status", "checkpoint", "priority", "assigned_to", "deadline", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]:
+        value = payload.get(field)
+        if value not in (None, ""):
+            task[field] = value
+    if payload.get("acceptance_criteria"):
+        task["acceptance_criteria"] = split_csv(payload.get("acceptance_criteria"))
+    if payload.get("dependencies"):
+        task["dependencies"] = split_csv(payload.get("dependencies"))
+    sync_task_ref(registry, task_id, path, task)
+    title = f"Update {task_id}: {task.get('title', '')}"
+    actions = [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update", "file_path": path, "content": dump(task)},
+    ]
+    message = payload.get("event_message") or payload.get("user_update") or payload.get("ai_update") or f"Updated {task_id}"
+    if not payload.get("suppress_event") and (payload.get("actor") or payload.get("event_message") or payload.get("user_update") or payload.get("status")):
+        actions.append(event_action(repo, make_event(registry, task, payload.get("actor", ""), "task_update", message)))
+        actions[0]["content"] = dump(registry)
+    return title, message, actions
+
+
+def submit_output_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    payload = {**payload, "status": payload.get("status") or "Done", "checkpoint": payload.get("checkpoint") or "Review", "suppress_event": True}
+    title, _message, actions = update_task_actions(repo, registry, payload)
+    task_id = payload.get("task_id", "")
+    _path, task = load_task_record(repo, registry, task_id)
+    event = make_event(registry, task, payload.get("actor", ""), "submitted_output", payload.get("message") or payload.get("output") or f"Submitted output for {task_id}")
+    actions[0]["content"] = dump(registry)
+    actions.append(event_action(repo, event))
+    return title.replace("Update", "Submit output for", 1), event["message"], actions
+
+
+def review_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    task_id = payload.get("task_id", "")
+    path, task = load_task_record(repo, registry, task_id)
+    decision = payload.get("decision", "changes_requested")
+    if decision == "approved":
+        task["status"] = "Verified"
+        task["checkpoint"] = "Ready"
+    elif decision in {"changes_requested", "rejected"}:
+        task["status"] = "In Progress"
+        task["checkpoint"] = "Revising"
+    sync_task_ref(registry, task_id, path, task)
+    review_id = allocate_id(registry, "review")
+    review = {
+        "id": review_id,
+        "task_id": task_id,
+        "project_id": task.get("project_id", ""),
+        "reviewer": payload.get("reviewer", ""),
+        "decision": decision,
+        "notes": payload.get("notes", ""),
+        "created_at": now_iso(),
+    }
+    event = make_event(registry, task, payload.get("reviewer", ""), f"review_{decision}", payload.get("notes", "") or f"{decision} review for {task_id}")
+    title = f"Review {task_id}: {decision}"
+    return title, event["message"], [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update", "file_path": path, "content": dump(task)},
+        review_action(repo, review),
+        event_action(repo, event),
+    ]
+
+
+def register_asset_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    project_id = payload.get("project_id", "")
+    project = registry.get("projects", {}).get(project_id)
+    if not project:
+        raise GitPMError(f"missing project {project_id}")
+    asset_id = allocate_id(registry, "asset")
+    asset = {
+        "title": payload.get("title", ""),
+        "type": payload.get("asset_type") or payload.get("type", "asset"),
+        "storage": payload.get("storage", "external-link"),
+        "path": payload.get("path", ""),
+        "source_url": payload.get("source_url", ""),
+        "used_by": split_csv(payload.get("used_by")) or [project_id],
+        "owner": payload.get("owner", ""),
+        "status": payload.get("status", "draft"),
+    }
+    registry.setdefault("assets", {})[asset_id] = asset
+    folder = project_folder(project_id, project["name"])
+    rel = f"projects/{folder}/assets/assets.yaml"
+    manifest = read_json_subset(repo / rel, {"assets": {}})
+    manifest.setdefault("assets", {})[asset_id] = asset
+    title = f"Register {asset_id}: {asset['title']}"
+    return title, title, [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update" if (repo / rel).exists() else "create", "file_path": rel, "content": dump(manifest)},
+    ]
+
+
+def apply_actions(repo: Path, actions: list[dict]) -> None:
+    for action in actions:
+        write_text(repo / action["file_path"], action["content"])
+
+
+def apply_payload(repo: Path, payload: dict) -> dict:
+    title, message, actions = proposal_actions(repo, payload)
+    apply_actions(repo, actions)
+    return {"title": title, "message": message, "actions": len(actions)}
+
+
+def cmd_update_task(args: argparse.Namespace) -> int:
+    payload = {key: value for key, value in vars(args).items() if value not in (None, "")}
+    payload["type"] = "update_task"
+    result = apply_payload(repo_arg(args.repo), payload)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_add_event(args: argparse.Namespace) -> int:
+    result = apply_payload(repo_arg(args.repo), {"type": "add_event", "task_id": args.task_id, "actor": args.actor, "event_type": args.event_type, "message": args.message})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_submit_output(args: argparse.Namespace) -> int:
+    result = apply_payload(repo_arg(args.repo), {"type": "submit_output", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_review_task(args: argparse.Namespace) -> int:
+    result = apply_payload(repo_arg(args.repo), {"type": "review_task", "task_id": args.task_id, "reviewer": args.reviewer, "decision": args.decision, "notes": args.notes})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_register_asset(args: argparse.Namespace) -> int:
+    result = apply_payload(
+        repo_arg(args.repo),
+        {
+            "type": "register_asset",
+            "project_id": args.project_id,
+            "title": args.title,
+            "asset_type": args.asset_type,
+            "storage": args.storage,
+            "path": args.path,
+            "source_url": args.source_url,
+            "used_by": args.used_by,
+            "owner": args.owner,
+            "status": args.status,
+        },
+    )
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    repo = repo_arg(args.repo)
+    if registry_path(repo).exists() and not args.force:
+        raise GitPMError(f"{registry_path(repo)} already exists; pass --force to refresh generated demo files")
+    init_args = argparse.Namespace(
+        repo=str(repo),
+        name=args.name,
+        owner=args.owner,
+        provider=args.provider,
+        github_repo=args.github_repo,
+        gitlab_url=args.gitlab_url,
+        gitlab_project=args.gitlab_project,
+        git_init=args.git_init,
+        force=args.force,
+    )
+    cmd_init(init_args)
+    registry = load_registry(repo)
+    project = registry["projects"]["PROJ1"]
+    project["summary"] = "Demo game project showing daily workflows for design, art, engineering, production, and review."
+    project["repos"] = [
+        {"name": "game-client", "provider": "github", "url": "https://github.com/example/game-client", "default_branch": "main", "role": "client/gameplay"},
+        {"name": "game-backend", "provider": "github", "url": "https://github.com/example/game-backend", "default_branch": "main", "role": "backend"},
+        {"name": "web-portal", "provider": "github", "url": "https://github.com/example/web-portal", "default_branch": "main", "role": "frontend"},
+    ]
+    registry["people"] = [
+        {"name": args.owner, "role": "Project Manager", "email": ""},
+        {"name": "Gina", "role": "Game Designer", "email": ""},
+        {"name": "Paul", "role": "Programmer", "email": ""},
+        {"name": "Anika", "role": "Artist", "email": ""},
+        {"name": "Tara", "role": "3D Artist", "email": ""},
+        {"name": "Mo", "role": "Modeller", "email": ""},
+        {"name": "Bao", "role": "Backend Engineer", "email": ""},
+        {"name": "Fern", "role": "Frontend Engineer", "email": ""},
+    ]
+    write_text(repo / project["path"], dump(project))
+    write_text(
+        repo / project["readme"],
+        markdown_doc(
+            {"id": "PROJ1", "type": "project", "owner": args.owner, "status": project["status"]},
+            f"PROJ1 - {project['name']}",
+            """
+## State
+
+- Status: Active
+- Current focus: playable vertical slice with instrumented onboarding.
+- Next review: Friday playtest review.
+
+## Repositories
+
+- `game-client`: gameplay, UI, local tooling.
+- `game-backend`: accounts, matchmaking, telemetry ingestion.
+- `web-portal`: community page and playtest signup flow.
+
+## Documents
+
+Generated demo docs include design, engineering, art, mockup, playtest, and release-planning examples.
+
+## Tasks
+
+Use `git_pm.py update-task`, `submit-output`, `review-task`, and `register-asset` to simulate daily collaboration.
+""",
+        ),
+    )
+    for doc_type, title, owner in [
+        ("game-design", "Core Loop Design", "Gina"),
+        ("frontend-spec", "Playtest Signup Flow", "Fern"),
+        ("backend-spec", "Telemetry Ingestion API", "Bao"),
+        ("technical-spec", "Vertical Slice Architecture", "Paul"),
+        ("3d-asset-brief", "Arena Props Blockout", "Tara"),
+        ("asset-brief", "UI Icon Pass", "Anika"),
+        ("mockup-review", "HUD Mockup Review", args.owner),
+        ("playtest-report", "First Internal Playtest", args.owner),
+    ]:
+        doc_id = allocate_id(registry, "doc")
+        rel, text, ref = make_doc(doc_id, project, doc_type, title, owner)
+        registry.setdefault("docs", {})[doc_id] = ref
+        write_text(repo / rel, text)
+    task_specs = [
+        ("Finalize core loop tuning questions", "Gina", "Game Designer", "Game Design", "game-client"),
+        ("Implement player ability prototype", "Paul", "Programmer", "Pull Request", "game-client"),
+        ("Paint first-pass HUD icons", "Anika", "Artist", "Asset", ""),
+        ("Block out arena prop kit", "Tara", "3D Artist", "Asset", ""),
+        ("Retopology pass for arena props", "Mo", "Modeller", "Asset", ""),
+        ("Add telemetry ingestion endpoint", "Bao", "Backend Engineer", "Pull Request", "game-backend"),
+        ("Build playtest signup page", "Fern", "Frontend Engineer", "Pull Request", "web-portal"),
+        ("Prepare Friday playtest checklist", args.owner, "Project Manager", "Playtest Plan", ""),
+    ]
+    created_tasks: list[str] = []
+    for title, assignee, role, output, target_repo in task_specs:
+        task_id, path, task = create_task_payload(registry, "PROJ1", title, assignee, role, output)
+        task["target_repo"] = target_repo
+        task["acceptance_criteria"] = [f"{output} is linked in task output", "Task has a current user_update"]
+        sync_task_ref(registry, task_id, path, task)
+        write_text(repo / path, dump(task))
+        created_tasks.append(task_id)
+    save_registry(repo, registry)
+    apply_payload(repo, {"type": "register_asset", "project_id": "PROJ1", "title": "HUD mockup v1", "asset_type": "mockup", "storage": "external-link", "source_url": "https://example.com/figma/hud-v1", "used_by": "PROJ1,TASK7", "owner": "Fern", "status": "review"})
+    apply_payload(repo, {"type": "register_asset", "project_id": "PROJ1", "title": "Arena prop blockout", "asset_type": "3d-model", "storage": "external-link", "source_url": "https://example.com/assets/arena-props-blockout.glb", "used_by": "PROJ1,TASK4,TASK5", "owner": "Tara", "status": "draft"})
+    apply_payload(repo, {"type": "update_task", "task_id": created_tasks[0], "actor": "Gina", "status": "In Progress", "user_update": "Reviewing playtest clips and tightening core loop questions."})
+    apply_payload(repo, {"type": "submit_output", "task_id": created_tasks[1], "actor": "Paul", "output": "https://github.com/example/game-client/pull/42", "message": "Ability prototype ready for review."})
+    apply_payload(repo, {"type": "review_task", "task_id": created_tasks[1], "reviewer": args.owner, "decision": "changes_requested", "notes": "Prototype works, but needs tuning notes linked from the design doc."})
+    print(json.dumps({"ok": True, "repo": str(repo), "project": "PROJ1", "tasks": len(task_specs) + 1, "scenario": args.scenario}, indent=2))
+    return 0
+
+
 def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
     change_type = payload.get("type")
     title = payload.get("title") or payload.get("message") or change_type or "Project change"
@@ -669,6 +1103,25 @@ def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
             {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
             {"action": "create", "file_path": rel, "content": text},
         ]
+    if change_type == "update_task":
+        registry = load_registry(repo)
+        return update_task_actions(repo, registry, payload)
+    if change_type == "add_event":
+        registry = load_registry(repo)
+        task_id = payload.get("task_id", "")
+        _path, task = load_task_record(repo, registry, task_id)
+        record = make_event(registry, task, payload.get("actor", ""), payload.get("event_type", "update"), payload.get("message", ""))
+        title = f"Add event to {task_id}"
+        return title, record["message"], [{"action": "update", "file_path": "registry.yaml", "content": dump(registry)}, event_action(repo, record)]
+    if change_type == "submit_output":
+        registry = load_registry(repo)
+        return submit_output_actions(repo, registry, payload)
+    if change_type == "review_task":
+        registry = load_registry(repo)
+        return review_task_actions(repo, registry, payload)
+    if change_type == "register_asset":
+        registry = load_registry(repo)
+        return register_asset_actions(repo, registry, payload)
     raise GitPMError(f"unknown proposal type: {change_type}")
 
 
@@ -999,6 +1452,76 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--owner", required=True)
     p.add_argument("--doc-type", default="proposal")
     p.set_defaults(func=cmd_create_doc)
+
+    p = sub.add_parser("update-task")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--actor", default="")
+    p.add_argument("--status", choices=sorted(TASK_STATUSES), default="")
+    p.add_argument("--checkpoint", choices=sorted(CHECKPOINTS), default="")
+    p.add_argument("--priority", default="")
+    p.add_argument("--assigned-to", default="")
+    p.add_argument("--deadline", default="")
+    p.add_argument("--expected-output", default="")
+    p.add_argument("--acceptance-criteria", default="")
+    p.add_argument("--dependencies", default="")
+    p.add_argument("--target-repo", default="")
+    p.add_argument("--output", default="")
+    p.add_argument("--blocker", default="")
+    p.add_argument("--ai-update", default="")
+    p.add_argument("--user-update", default="")
+    p.add_argument("--event-message", default="")
+    p.set_defaults(func=cmd_update_task)
+
+    p = sub.add_parser("add-event")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--event-type", default="update")
+    p.add_argument("--message", required=True)
+    p.set_defaults(func=cmd_add_event)
+
+    p = sub.add_parser("submit-output")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--message", default="")
+    p.set_defaults(func=cmd_submit_output)
+
+    p = sub.add_parser("review-task")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--reviewer", required=True)
+    p.add_argument("--decision", choices=["approved", "changes_requested", "rejected"], required=True)
+    p.add_argument("--notes", default="")
+    p.set_defaults(func=cmd_review_task)
+
+    p = sub.add_parser("register-asset")
+    add_common_repo(p)
+    p.add_argument("--project-id", required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--asset-type", default="asset")
+    p.add_argument("--storage", default="external-link")
+    p.add_argument("--path", default="")
+    p.add_argument("--source-url", default="")
+    p.add_argument("--used-by", default="")
+    p.add_argument("--owner", required=True)
+    p.add_argument("--status", default="draft")
+    p.set_defaults(func=cmd_register_asset)
+
+    p = sub.add_parser("demo")
+    add_common_repo(p)
+    p.add_argument("--scenario", default="game", choices=["game"])
+    p.add_argument("--name", default="Demo Game Hub")
+    p.add_argument("--owner", default="Maya")
+    p.add_argument("--provider", default=os.environ.get("GPM_PROVIDER", "github"), choices=["github", "gitlab"])
+    p.add_argument("--github-repo", default=os.environ.get("GPM_GITHUB_REPO", ""))
+    p.add_argument("--gitlab-url", default=os.environ.get("GPM_GITLAB_URL", ""))
+    p.add_argument("--gitlab-project", default=os.environ.get("GPM_GITLAB_PROJECT", ""))
+    p.add_argument("--git-init", action="store_true")
+    p.add_argument("--force", action="store_true")
+    p.set_defaults(func=cmd_demo)
 
     p = sub.add_parser("propose")
     add_common_repo(p)

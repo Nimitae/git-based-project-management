@@ -37,6 +37,7 @@ Use `scripts/git_pm.py` for deterministic work:
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" validate --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" compile --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
 ```
 
 Use the Node.js website runtime for the deployable human UI:
@@ -108,10 +109,21 @@ Use task events/issues for operational updates:
 
 - Started, blocked, submitted output, handoff note, quick status update.
 
+Use controller commands for normal day-to-day updates:
+
+```powershell
+git_pm.py update-task --repo . --task-id TASK3 --actor "Paul" --status "In Progress" --user-update "Prototype branch is running locally."
+git_pm.py submit-output --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/org/game-client/pull/42" --message "Ready for review."
+git_pm.py review-task --repo . --task-id TASK3 --reviewer "Maya" --decision "approved" --notes "Accepted."
+git_pm.py register-asset --repo . --project-id PROJ1 --title "HUD mockup v2" --asset-type "mockup" --source-url "https://example.com/mockup" --used-by "PROJ1,TASK4" --owner "Fern"
+```
+
 ## References
 
 - `references/architecture.md`: canonical data model, Git/website/PR/MR boundaries, and collaboration rules.
 - `references/schemas.md`: repository layout and file schemas.
+- `references/wiki-guidelines.md`: required wiki page shapes, document sections, asset registration, and task-linking rules.
+- `references/day-to-day-workflows.md`: role-specific workflows for PMs, game designers, programmers, artists, 3D artists, modellers, backend engineers, frontend engineers, and reviewers.
 - `references/role-workflows.md`: owner/manager/assignee/reviewer/agent rules.
 - `references/git-provider-setup.md`: GitHub/GitLab tokens, repository permissions, PR/MR creation, and deployment guidance.
 - `references/website.md`: website behavior, API endpoints, proposal flow, and deployment options.

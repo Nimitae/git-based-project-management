@@ -74,3 +74,7 @@ Use task events or issues for:
 - Blockers.
 - Handoffs.
 - Output submission notes.
+
+## Daily Role Examples
+
+For concrete day-to-day examples for project managers, game designers, programmers, artists, 3D artists, modellers, backend engineers, frontend engineers, and reviewers, read `references/day-to-day-workflows.md`.

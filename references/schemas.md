@@ -83,12 +83,14 @@ Required top-level fields:
   "role": "Eng",
   "status": "Backlog",
   "checkpoint": "Drafting",
+  "priority": "Medium",
   "deadline": "",
   "expected_output": "Pull Request",
   "acceptance_criteria": ["Events are documented", "Tests pass"],
   "dependencies": [],
   "target_repo": "game-client",
   "output": "",
+  "blocker": "",
   "ai_update": "",
   "user_update": ""
 }
@@ -131,3 +133,63 @@ Use project-level asset manifests for durable asset tracking:
 ```
 
 Small previews may live in Git or Git LFS. Large builds, videos, source art, and captures should live in releases/packages/object storage or the relevant implementation repo.
+
+## Events
+
+Task events are append-only JSONL rows in `events/task-events.jsonl`:
+
+```json
+{
+  "id": "EVENT1",
+  "task_id": "TASK1",
+  "project_id": "PROJ1",
+  "actor": "Gina",
+  "event_type": "task_update",
+  "message": "Core loop questions are ready for review.",
+  "created_at": "2026-05-11T10:00:00+08:00"
+}
+```
+
+Use events for daily notes, handoffs, blockers, and output submission context. Durable task state still belongs in the task YAML file.
+
+## Reviews
+
+Task reviews are append-only JSONL rows in `reviews/task-reviews.jsonl`:
+
+```json
+{
+  "id": "REVIEW1",
+  "task_id": "TASK1",
+  "project_id": "PROJ1",
+  "reviewer": "Maya",
+  "decision": "changes_requested",
+  "notes": "Link the design doc before this can be verified.",
+  "created_at": "2026-05-11T10:15:00+08:00"
+}
+```
+
+Valid review decisions are `approved`, `changes_requested`, and `rejected`.
+
+## Document Types
+
+Core document types:
+
+- `proposal`
+- `brief`
+- `game-design`
+- `technical-spec`
+- `frontend-spec`
+- `backend-spec`
+- `playtest-plan`
+- `playtest-report`
+- `qa-report`
+- `research-report`
+- `asset-brief`
+- `3d-asset-brief`
+- `video-brief`
+- `mockup-review`
+- `build-note`
+- `release-plan`
+- `postmortem`
+- `decision`
+- `meeting-notes`

@@ -12,7 +12,21 @@ const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8787);
 const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "Done", "Verified", "Iceboxed"]);
 const PROJECT_STATUSES = new Set(["Planning", "Active", "Paused", "Shipped", "Archived"]);
-const DOC_TYPES = new Set(["proposal", "brief", "game-design", "technical-spec", "playtest-plan", "playtest-report", "qa-report", "research-report", "asset-brief", "video-brief", "build-note", "release-plan", "postmortem", "decision", "meeting-notes"]);
+const DOC_TYPES = new Set(["proposal", "brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "playtest-plan", "playtest-report", "qa-report", "research-report", "asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes"]);
+const DOC_SECTION_REQUIREMENTS = {
+  proposal: ["Problem", "Proposed Direction", "Risks", "Decision Needed"],
+  brief: ["Goal", "Audience", "Scope", "Success Criteria"],
+  "game-design": ["Player Fantasy", "Core Loop", "Systems", "UX Notes", "Tuning Questions"],
+  "technical-spec": ["Goal", "Architecture", "Interfaces", "Test Plan", "Rollout"],
+  "frontend-spec": ["User Flow", "State", "Components", "API Contract", "Test Plan"],
+  "backend-spec": ["Goal", "Data Model", "API", "Operations", "Test Plan"],
+  "playtest-plan": ["Build", "Participants", "Test Goals", "Tasks", "Capture Plan"],
+  "playtest-report": ["Build", "Participants", "Findings", "Evidence", "Recommended Changes"],
+  "qa-report": ["Build", "Scope", "Defects", "Risks", "Release Recommendation"],
+  "asset-brief": ["Purpose", "References", "Requirements", "Format", "Delivery"],
+  "3d-asset-brief": ["Purpose", "References", "Model Requirements", "Texture Requirements", "Delivery"],
+  "mockup-review": ["Context", "Mockups", "Feedback", "Decision", "Follow-up Tasks"]
+};
 
 function nowIso() {
   const now = new Date();
@@ -102,7 +116,7 @@ function maxSuffix(ids, prefix) {
 }
 
 function allocateId(registry, kind) {
-  const prefix = kind === "project" ? "PROJ" : kind === "task" ? "TASK" : kind === "doc" ? "DOC" : "ITEM";
+  const prefix = kind === "project" ? "PROJ" : kind === "task" ? "TASK" : kind === "doc" ? "DOC" : kind === "asset" ? "ASSET" : kind === "event" ? "EVENT" : kind === "review" ? "REVIEW" : "ITEM";
   const section = kind === "doc" ? "docs" : `${kind}s`;
   const existing = Object.keys(registry[section] || {});
   registry.next_ids ||= {};
@@ -118,12 +132,27 @@ function projectFolder(projectId, name) {
 
 function docFolder(docType) {
   if (["proposal", "brief"].includes(docType)) return "proposals";
-  if (["game-design", "technical-spec"].includes(docType)) return "design";
+  if (["game-design", "technical-spec", "frontend-spec", "backend-spec"].includes(docType)) return "design";
   if (["playtest-plan", "playtest-report", "qa-report", "research-report"].includes(docType)) return "reports";
-  if (["asset-brief", "video-brief", "build-note"].includes(docType)) return "production";
+  if (["asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note"].includes(docType)) return "production";
   if (["release-plan", "postmortem"].includes(docType)) return "release";
   if (["decision", "meeting-notes"].includes(docType)) return "notes";
   return "docs";
+}
+
+function docBodyTemplate(docType) {
+  const sections = DOC_SECTION_REQUIREMENTS[docType] || ["Purpose", "Context", "Content", "Open Questions"];
+  return sections.map((section) => `## ${section}\n\nTBD`).join("\n\n");
+}
+
+function splitCsv(value) {
+  return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function appendJsonl(existing, record) {
+  const prefix = String(existing || "").replace(/\n+$/g, "");
+  const line = JSON.stringify(record);
+  return prefix ? `${prefix}\n${line}\n` : `${line}\n`;
 }
 
 async function validateRepo(registry) {
@@ -219,6 +248,7 @@ async function compileData() {
     projects: Object.entries(registry.projects || {}).map(([id, value]) => ({ id, ...value })),
     docs: await collectDocs(registry),
     tasks: await collectTasks(registry),
+    assets: Object.entries(registry.assets || {}).map(([id, value]) => ({ id, ...value })),
     people: registry.people || [],
     events: await readJsonl("events/task-events.jsonl"),
     reviews: await readJsonl("reviews/task-reviews.jsonl"),
@@ -231,7 +261,7 @@ function createTaskPayload(registry, payload) {
   if (!project) throw new Error(`missing project ${payload.project_id}`);
   const taskId = allocateId(registry, "task");
   const taskPath = `projects/${projectFolder(payload.project_id, project.name)}/tasks/${taskId}.yaml`;
-  const task = { id: taskId, project_id: payload.project_id, title: payload.title || "", assigned_to: payload.assigned_to || "", role: payload.role || "", status: "Backlog", checkpoint: "Drafting", deadline: "", expected_output: payload.expected_output || "", acceptance_criteria: [], dependencies: [], target_repo: "", output: "", ai_update: "", user_update: "" };
+  const task = { id: taskId, project_id: payload.project_id, title: payload.title || "", assigned_to: payload.assigned_to || "", role: payload.role || "", status: "Backlog", checkpoint: "Drafting", priority: "Medium", deadline: "", expected_output: payload.expected_output || "", acceptance_criteria: [], dependencies: [], target_repo: "", output: "", blocker: "", ai_update: "", user_update: "" };
   registry.tasks[taskId] = { project_id: payload.project_id, path: taskPath, title: task.title, assigned_to: task.assigned_to, status: "Backlog", expected_output: task.expected_output };
   return { taskId, taskPath, task };
 }
@@ -242,9 +272,99 @@ function createDocPayload(registry, payload) {
   const docId = allocateId(registry, "doc");
   const docType = payload.doc_type || "proposal";
   const rel = `projects/${projectFolder(payload.project_id, project.name)}/docs/${docFolder(docType)}/${docId}-${slugify(payload.title || "document")}.md`;
-  const text = `---\nid: ${docId}\nproject_id: ${payload.project_id}\ntype: ${docType}\nowner: ${payload.owner || ""}\nstatus: draft\n---\n\n# ${docId} - ${payload.title || "Document"}\n\n## Purpose\n\n## Context\n\n## Content\n\n## Open Questions\n\n`;
+  const text = `---\nid: ${docId}\nproject_id: ${payload.project_id}\ntype: ${docType}\nowner: ${payload.owner || ""}\nstatus: draft\n---\n\n# ${docId} - ${payload.title || "Document"}\n\n${docBodyTemplate(docType)}\n`;
   registry.docs[docId] = { project_id: payload.project_id, doc_type: docType, title: payload.title || "", owner: payload.owner || "", path: rel, status: "draft" };
   return { docId, rel, text };
+}
+
+async function loadTaskRecord(registry, taskId) {
+  const ref = registry.tasks?.[taskId];
+  if (!ref) throw new Error(`missing task ${taskId}`);
+  const task = await readJsonSubset(safeRepoPath(ref.path), {});
+  if (task.id !== taskId) throw new Error(`${ref.path} id is ${task.id}, expected ${taskId}`);
+  return { path: ref.path, task };
+}
+
+function syncTaskRef(registry, taskId, taskPath, task) {
+  registry.tasks ||= {};
+  registry.tasks[taskId] = { project_id: task.project_id || "", path: taskPath, title: task.title || "", assigned_to: task.assigned_to || "", status: task.status || "Backlog", expected_output: task.expected_output || "" };
+}
+
+function makeEvent(registry, task, actor, eventType, message) {
+  const eventId = allocateId(registry, "event");
+  return { id: eventId, task_id: task.id || "", project_id: task.project_id || "", actor: actor || "Unknown", event_type: eventType || "update", message: message || "", created_at: nowIso() };
+}
+
+async function eventAction(record) {
+  const rel = "events/task-events.jsonl";
+  return { action: existsSync(safeRepoPath(rel)) ? "update" : "create", file_path: rel, content: appendJsonl(await readText(safeRepoPath(rel), ""), record) };
+}
+
+async function reviewAction(record) {
+  const rel = "reviews/task-reviews.jsonl";
+  return { action: existsSync(safeRepoPath(rel)) ? "update" : "create", file_path: rel, content: appendJsonl(await readText(safeRepoPath(rel), ""), record) };
+}
+
+async function updateTaskActions(registry, payload) {
+  const taskId = payload.task_id || "";
+  const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  for (const field of ["status", "checkpoint", "priority", "assigned_to", "deadline", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]) {
+    if (payload[field]) task[field] = payload[field];
+  }
+  if (payload.acceptance_criteria) task.acceptance_criteria = splitCsv(payload.acceptance_criteria);
+  if (payload.dependencies) task.dependencies = splitCsv(payload.dependencies);
+  syncTaskRef(registry, taskId, taskPath, task);
+  const title = `Update ${taskId}: ${task.title || ""}`;
+  const actions = [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }];
+  const message = payload.event_message || payload.user_update || payload.ai_update || `Updated ${taskId}`;
+  if (!payload.suppress_event && (payload.actor || payload.event_message || payload.user_update || payload.status)) {
+    actions.push(await eventAction(makeEvent(registry, task, payload.actor || "", "task_update", message)));
+    actions[0].content = dump(registry);
+  }
+  return { title, message, actions };
+}
+
+async function submitOutputActions(registry, payload) {
+  const result = await updateTaskActions(registry, { ...payload, status: payload.status || "Done", checkpoint: payload.checkpoint || "Review", suppress_event: true });
+  const { task } = await loadTaskRecord(registry, payload.task_id || "");
+  const event = makeEvent(registry, { ...task, id: payload.task_id }, payload.actor || "", "submitted_output", payload.message || payload.output || `Submitted output for ${payload.task_id}`);
+  result.actions[0].content = dump(registry);
+  result.actions.push(await eventAction(event));
+  result.title = result.title.replace("Update", "Submit output for");
+  result.message = event.message;
+  return result;
+}
+
+async function reviewTaskActions(registry, payload) {
+  const taskId = payload.task_id || "";
+  const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  const decision = payload.decision || "changes_requested";
+  if (decision === "approved") {
+    task.status = "Verified";
+    task.checkpoint = "Ready";
+  } else {
+    task.status = "In Progress";
+    task.checkpoint = "Revising";
+  }
+  syncTaskRef(registry, taskId, taskPath, task);
+  const review = { id: allocateId(registry, "review"), task_id: taskId, project_id: task.project_id || "", reviewer: payload.reviewer || "", decision, notes: payload.notes || "", created_at: nowIso() };
+  const event = makeEvent(registry, task, payload.reviewer || "", `review_${decision}`, payload.notes || `${decision} review for ${taskId}`);
+  return { title: `Review ${taskId}: ${decision}`, message: event.message, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await reviewAction(review), await eventAction(event)] };
+}
+
+async function registerAssetActions(registry, payload) {
+  const project = registry.projects?.[payload.project_id];
+  if (!project) throw new Error(`missing project ${payload.project_id}`);
+  const assetId = allocateId(registry, "asset");
+  const asset = { title: payload.title || "", type: payload.asset_type || payload.type || "asset", storage: payload.storage || "external-link", path: payload.path || "", source_url: payload.source_url || "", used_by: splitCsv(payload.used_by).length ? splitCsv(payload.used_by) : [payload.project_id], owner: payload.owner || "", status: payload.status || "draft" };
+  registry.assets ||= {};
+  registry.assets[assetId] = asset;
+  const rel = `projects/${projectFolder(payload.project_id, project.name)}/assets/assets.yaml`;
+  const manifest = await readJsonSubset(safeRepoPath(rel), { assets: {} });
+  manifest.assets ||= {};
+  manifest.assets[assetId] = asset;
+  const title = `Register ${assetId}: ${asset.title}`;
+  return { title, message: title, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: existsSync(safeRepoPath(rel)) ? "update" : "create", file_path: rel, content: dump(manifest) }] };
 }
 
 async function proposalActions(payload) {
@@ -265,6 +385,24 @@ async function proposalActions(payload) {
     const { docId, rel, text } = createDocPayload(registry, payload);
     const title = `Create ${docId}: ${payload.title || ""}`;
     return { title, message: title, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "create", file_path: rel, content: text }] };
+  }
+  if (payload.type === "update_task") {
+    return updateTaskActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "add_event") {
+    const registry = await loadRegistry();
+    const { task } = await loadTaskRecord(registry, payload.task_id || "");
+    const record = makeEvent(registry, task, payload.actor || "", payload.event_type || "update", payload.message || "");
+    return { title: `Add event to ${payload.task_id}`, message: record.message, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, await eventAction(record)] };
+  }
+  if (payload.type === "submit_output") {
+    return submitOutputActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "review_task") {
+    return reviewTaskActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "register_asset") {
+    return registerAssetActions(await loadRegistry(), payload);
   }
   throw new Error(`unknown proposal type: ${payload.type}`);
 }

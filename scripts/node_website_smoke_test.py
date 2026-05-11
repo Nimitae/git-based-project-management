@@ -109,9 +109,23 @@ def main() -> int:
                 "expected_output": "Setup Confirmation",
             },
         )
+        asset_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "register_asset",
+                "project_id": "PROJ1",
+                "title": "Node smoke mockup",
+                "asset_type": "mockup",
+                "source_url": "https://example.com/node-mockup",
+                "used_by": "PROJ1,TASK1",
+                "owner": "Terence",
+            },
+        )
         proposal_dir = Path(proposal.get("proposal_dir", ""))
         if not proposal_dir.exists():
             raise RuntimeError(f"proposal directory was not created: {proposal}")
+        if not Path(asset_proposal.get("proposal_dir", "")).exists():
+            raise RuntimeError(f"asset proposal directory was not created: {asset_proposal}")
         with request.urlopen(base + "/", timeout=10) as response:
             html = response.read().decode("utf-8")
         if "Project Workspace" not in html:

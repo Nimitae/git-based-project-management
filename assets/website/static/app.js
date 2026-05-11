@@ -74,6 +74,16 @@ function renderDocs() {
   `).join("") || `<div class="doc-row"><strong>No docs found</strong><span>Run compile or initialize the repo.</span></div>`;
 }
 
+function renderAssets() {
+  const assets = state.data ? (state.data.assets || []).filter(matchesQuery) : [];
+  $("assetList").innerHTML = assets.map((asset) => `
+    <article class="doc-row">
+      <strong>${escapeHtml(asset.id)} - ${escapeHtml(asset.title || asset.type)}</strong>
+      <span>${escapeHtml(asset.type || "asset")} / ${escapeHtml(asset.owner || "Unowned")} / ${escapeHtml(asset.source_url || asset.path || "No link")}</span>
+    </article>
+  `).join("") || `<div class="doc-row"><strong>No assets found</strong><span>Register mockups, videos, builds, art, and external files.</span></div>`;
+}
+
 function renderEvents() {
   const events = state.data ? state.data.events.slice(-8).reverse() : [];
   $("eventList").innerHTML = events.map((event) => `
@@ -91,9 +101,10 @@ function renderSummary() {
   $("repoLabel").textContent = data.repo_name || "Project Hub";
   $("sourceMode").textContent = data.github_repo || data.gitlab_project || "Git local";
   $("generatedAt").textContent = data.generated_at || "";
-  $("summaryLine").textContent = `${data.projects.length} projects, ${data.docs.length} docs, ${data.tasks.length} tasks`;
+  $("summaryLine").textContent = `${data.projects.length} projects, ${data.docs.length} docs, ${data.tasks.length} tasks, ${(data.assets || []).length} assets`;
   $("projectCount").textContent = data.projects.length;
   $("docCount").textContent = data.docs.length;
+  $("assetCount").textContent = (data.assets || []).length;
   $("openTaskCount").textContent = data.tasks.filter((task) => !["Done", "Verified", "Iceboxed"].includes(task.status)).length;
   $("issueCount").textContent = data.validation.issues.length;
 }
@@ -103,6 +114,7 @@ function render() {
   renderTasksTable();
   renderTaskBoard();
   renderDocs();
+  renderAssets();
   renderEvents();
 }
 
@@ -120,6 +132,16 @@ async function submitProposal(payload) {
   });
   const result = await response.json();
   $("proposalResult").textContent = JSON.stringify(result, null, 2);
+}
+
+async function submitUpdate(payload) {
+  const response = await fetch("/api/proposals", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  $("updateResult").textContent = JSON.stringify(result, null, 2);
 }
 
 document.querySelectorAll(".nav-item").forEach((button) => {
@@ -154,6 +176,34 @@ $("createTaskForm").addEventListener("submit", (event) => {
   });
 });
 
+$("createDocForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitProposal({
+    type: "create_doc",
+    project_id: form.get("project_id"),
+    title: form.get("title"),
+    owner: form.get("owner"),
+    doc_type: form.get("doc_type")
+  });
+});
+
+$("registerAssetForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitProposal({
+    type: "register_asset",
+    project_id: form.get("project_id"),
+    title: form.get("title"),
+    asset_type: form.get("asset_type"),
+    storage: form.get("storage"),
+    path: form.get("path"),
+    source_url: form.get("source_url"),
+    used_by: form.get("used_by"),
+    owner: form.get("owner")
+  });
+});
+
 $("editFileForm").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -161,6 +211,57 @@ $("editFileForm").addEventListener("submit", (event) => {
     type: "edit_file",
     path: form.get("path"),
     content: form.get("content"),
+    message: form.get("message")
+  });
+});
+
+$("updateTaskForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "update_task",
+    task_id: form.get("task_id"),
+    actor: form.get("actor"),
+    status: form.get("status"),
+    checkpoint: form.get("checkpoint"),
+    output: form.get("output"),
+    blocker: form.get("blocker"),
+    user_update: form.get("user_update")
+  });
+});
+
+$("submitOutputForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "submit_output",
+    task_id: form.get("task_id"),
+    actor: form.get("actor"),
+    output: form.get("output"),
+    message: form.get("message")
+  });
+});
+
+$("reviewTaskForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "review_task",
+    task_id: form.get("task_id"),
+    reviewer: form.get("reviewer"),
+    decision: form.get("decision"),
+    notes: form.get("notes")
+  });
+});
+
+$("addEventForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "add_event",
+    task_id: form.get("task_id"),
+    actor: form.get("actor"),
+    event_type: form.get("event_type"),
     message: form.get("message")
   });
 });

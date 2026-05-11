@@ -20,7 +20,9 @@
           <button class="nav-item active" data-view="dashboard">Dashboard</button>
           <button class="nav-item" data-view="tasks">Tasks</button>
           <button class="nav-item" data-view="docs">Docs</button>
-          <button class="nav-item" data-view="propose">Propose</button>
+          <button class="nav-item" data-view="assets">Assets</button>
+          <button class="nav-item" data-view="updates">Updates</button>
+          <button class="nav-item" data-view="propose">Create</button>
         </nav>
         <div class="sync-box">
           <span class="sync-label">Source</span>
@@ -45,6 +47,7 @@
           <div class="metric-grid">
             <div class="metric"><span>Projects</span><strong id="projectCount">0</strong></div>
             <div class="metric"><span>Documents</span><strong id="docCount">0</strong></div>
+            <div class="metric"><span>Assets</span><strong id="assetCount">0</strong></div>
             <div class="metric"><span>Open Tasks</span><strong id="openTaskCount">0</strong></div>
             <div class="metric"><span>Validation</span><strong id="issueCount">0</strong></div>
           </div>
@@ -108,6 +111,107 @@
           </section>
         </section>
 
+        <section class="view" id="assetsView">
+          <section class="panel wide">
+            <div class="panel-header">
+              <h2>Assets</h2>
+              <span>Mockups, videos, builds, art, and linked files</span>
+            </div>
+            <div id="assetList" class="doc-list"></div>
+          </section>
+        </section>
+
+        <section class="view" id="updatesView">
+          <div class="proposal-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Update Task</h2>
+              </div>
+              <form id="updateTaskForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK2" required /></label>
+                <label>Actor <input name="actor" placeholder="Gina" /></label>
+                <label>Status
+                  <select name="status">
+                    <option value="">No status change</option>
+                    <option>Backlog</option>
+                    <option>In Progress</option>
+                    <option>Blocked</option>
+                    <option>Done</option>
+                    <option>Verified</option>
+                    <option>Iceboxed</option>
+                  </select>
+                </label>
+                <label>Checkpoint
+                  <select name="checkpoint">
+                    <option value="">No checkpoint change</option>
+                    <option>Drafting</option>
+                    <option>Ready</option>
+                    <option>Review</option>
+                    <option>Revising</option>
+                    <option>Blocked</option>
+                  </select>
+                </label>
+                <label>User Update <textarea name="user_update" rows="4" placeholder="What changed, what is blocked, or what needs review"></textarea></label>
+                <label>Output Link <input name="output" placeholder="PR, video, build, mockup, or report URL" /></label>
+                <label>Blocker <input name="blocker" placeholder="Only required when blocked" /></label>
+                <button type="submit">Propose Task Update</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Submit Output</h2>
+              </div>
+              <form id="submitOutputForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" placeholder="Paul" required /></label>
+                <label>Output <input name="output" placeholder="https://github.com/org/repo/pull/42" required /></label>
+                <label>Message <textarea name="message" rows="4" placeholder="What should the reviewer check?"></textarea></label>
+                <button type="submit">Submit For Review</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Review Task</h2>
+              </div>
+              <form id="reviewTaskForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
+                <label>Reviewer <input name="reviewer" placeholder="Maya" required /></label>
+                <label>Decision
+                  <select name="decision" required>
+                    <option value="approved">Approved</option>
+                    <option value="changes_requested">Changes Requested</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </label>
+                <label>Notes <textarea name="notes" rows="4" placeholder="Concrete review notes"></textarea></label>
+                <button type="submit">Record Review</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Add Event</h2>
+              </div>
+              <form id="addEventForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK4" required /></label>
+                <label>Actor <input name="actor" placeholder="Anika" required /></label>
+                <label>Event Type <input name="event_type" placeholder="blocked, handoff, note" /></label>
+                <label>Message <textarea name="message" rows="4" required></textarea></label>
+                <button type="submit">Add Event</button>
+              </form>
+            </section>
+          </div>
+
+          <section class="panel wide">
+            <div class="panel-header">
+              <h2>Proposal Result</h2>
+            </div>
+            <pre id="updateResult">{}</pre>
+          </section>
+        </section>
+
         <section class="view" id="proposeView">
           <div class="proposal-grid">
             <section class="panel">
@@ -121,6 +225,50 @@
                 <label>Role <input name="role" placeholder="PM" /></label>
                 <label>Expected Output <input name="expected_output" placeholder="Design Doc" required /></label>
                 <button type="submit">Create PR/MR Proposal</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Create Document PR/MR</h2>
+              </div>
+              <form id="createDocForm" class="form-stack">
+                <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
+                <label>Title <input name="title" placeholder="HUD mockup review" required /></label>
+                <label>Owner <input name="owner" placeholder="Fern" required /></label>
+                <label>Document Type
+                  <select name="doc_type">
+                    <option>proposal</option>
+                    <option>game-design</option>
+                    <option>technical-spec</option>
+                    <option>frontend-spec</option>
+                    <option>backend-spec</option>
+                    <option>playtest-report</option>
+                    <option>qa-report</option>
+                    <option>asset-brief</option>
+                    <option>3d-asset-brief</option>
+                    <option>mockup-review</option>
+                    <option>decision</option>
+                  </select>
+                </label>
+                <button type="submit">Create PR/MR Proposal</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Register Asset PR/MR</h2>
+              </div>
+              <form id="registerAssetForm" class="form-stack">
+                <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
+                <label>Title <input name="title" placeholder="HUD mockup v2" required /></label>
+                <label>Asset Type <input name="asset_type" placeholder="mockup, video, 3d-model, build" /></label>
+                <label>Storage <input name="storage" placeholder="external-link, git-lfs, release" /></label>
+                <label>Source URL <input name="source_url" placeholder="https://..." /></label>
+                <label>Repo Path <input name="path" placeholder="assets/previews/hud-v2.png" /></label>
+                <label>Used By <input name="used_by" placeholder="PROJ1,TASK3,DOC5" /></label>
+                <label>Owner <input name="owner" placeholder="Anika" required /></label>
+                <button type="submit">Register Asset</button>
               </form>
             </section>
 

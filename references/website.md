@@ -17,10 +17,14 @@ It must:
 The bundled static UI supports:
 
 - Project/document/task dashboard.
-- Search across docs/tasks/owners/status.
+- Search across docs/tasks/assets/owners/status.
 - Task table with status and expected output.
 - Documents panel with Git paths.
+- Assets panel with mockups, art, models, videos, builds, and external links.
 - Create-task proposal form.
+- Create-document proposal form.
+- Update-task, submit-output, add-event, and review-task forms.
+- Register-asset proposal form.
 - Edit-file proposal form.
 - Local dry-run proposal output.
 
@@ -69,6 +73,28 @@ Proposal payload examples:
   "path": "projects/PROJ1-sample-game/docs/design/DOC2-core-loop.md",
   "content": "...full file content...",
   "message": "Update core loop scope"
+}
+```
+
+```json
+{
+  "type": "update_task",
+  "task_id": "TASK2",
+  "actor": "Gina",
+  "status": "In Progress",
+  "user_update": "Testing two tuning directions."
+}
+```
+
+```json
+{
+  "type": "register_asset",
+  "project_id": "PROJ1",
+  "title": "HUD mockup v2",
+  "asset_type": "mockup",
+  "source_url": "https://example.com/mockup",
+  "used_by": "PROJ1,TASK4",
+  "owner": "Fern"
 }
 ```
 
@@ -139,4 +165,5 @@ For a manager asking an agent to deploy:
 - The first screen is the dashboard, not a landing page.
 - Long-form prose edits are accepted, but saved as MR proposals.
 - Status updates should be lightweight and visible in recent events.
+- Daily workflow forms should create the same canonical file changes an agent would create from the CLI.
 - Every proposed change should show the target branch/MR or dry-run proposal path.

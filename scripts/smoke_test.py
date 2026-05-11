@@ -52,6 +52,10 @@ def main() -> int:
     server = None
     try:
         run(["init", "--repo", str(repo), "--name", "Demo Project Hub", "--owner", "Terence"])
+        run(["update-task", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--status", "In Progress", "--user-update", "Smoke test update"])
+        run(["submit-output", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--output", "https://example.com/output", "--message", "Smoke output"])
+        run(["review-task", "--repo", str(repo), "--task-id", "TASK1", "--reviewer", "Terence", "--decision", "approved", "--notes", "Smoke review"])
+        run(["register-asset", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke mockup", "--asset-type", "mockup", "--source-url", "https://example.com/mockup", "--used-by", "PROJ1,TASK1", "--owner", "Terence"])
         validate = run(["validate", "--repo", str(repo), "--json"])
         issues = json.loads(validate.stdout)["issues"]
         errors = [item for item in issues if item["level"] == "error"]
@@ -93,9 +97,21 @@ def main() -> int:
                 "expected_output": "Setup Confirmation",
             },
         )
+        update_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "update_task",
+                "task_id": "TASK1",
+                "actor": "Terence",
+                "status": "In Progress",
+                "user_update": "Website smoke update",
+            },
+        )
         proposal_dir = Path(proposal.get("proposal_dir", ""))
         if not proposal_dir.exists():
             raise RuntimeError(f"proposal directory was not created: {proposal}")
+        if not Path(update_proposal.get("proposal_dir", "")).exists():
+            raise RuntimeError(f"update proposal directory was not created: {update_proposal}")
         with request.urlopen(base + "/", timeout=10) as response:
             html = response.read().decode("utf-8")
         if "Project Workspace" not in html:
