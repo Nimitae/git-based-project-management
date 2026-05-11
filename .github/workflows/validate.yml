@@ -1,0 +1,38 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Python syntax
+        run: python -m py_compile scripts/project_os.py scripts/smoke_test.py scripts/node_website_smoke_test.py
+
+      - name: Node syntax
+        run: |
+          node --check assets/website/server.mjs
+          node --check assets/website/static/app.js
+
+      - name: Controller smoke test
+        run: python scripts/smoke_test.py
+
+      - name: Node website smoke test
+        run: python scripts/node_website_smoke_test.py
+
+      - name: Docker build
+        run: docker build -t project-os-website:test assets/website

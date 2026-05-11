@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Project OS</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="/static/project-os-mark.svg" alt="" />
+          <div>
+            <strong>Project OS</strong>
+            <span id="repoLabel">Git-backed workspace</span>
+          </div>
+        </div>
+        <nav class="nav-list" aria-label="Views">
+          <button class="nav-item active" data-view="dashboard">Dashboard</button>
+          <button class="nav-item" data-view="tasks">Tasks</button>
+          <button class="nav-item" data-view="docs">Docs</button>
+          <button class="nav-item" data-view="propose">Propose</button>
+        </nav>
+        <div class="sync-box">
+          <span class="sync-label">Source</span>
+          <strong id="sourceMode">Git local</strong>
+          <small id="generatedAt">Waiting for data</small>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1>Project Workspace</h1>
+            <p id="summaryLine">Loading project state...</p>
+          </div>
+          <div class="toolbar">
+            <input id="searchInput" type="search" placeholder="Search docs, tasks, owners" />
+            <button id="refreshButton" type="button">Refresh</button>
+          </div>
+        </header>
+
+        <section class="view active" id="dashboardView">
+          <div class="metric-grid">
+            <div class="metric"><span>Projects</span><strong id="projectCount">0</strong></div>
+            <div class="metric"><span>Workstreams</span><strong id="ewCount">0</strong></div>
+            <div class="metric"><span>Open Tasks</span><strong id="openTaskCount">0</strong></div>
+            <div class="metric"><span>Validation</span><strong id="issueCount">0</strong></div>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Active Tasks</h2>
+                <span id="taskResultCount"></span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Title</th>
+                      <th>Owner</th>
+                      <th>Status</th>
+                      <th>Expected Output</th>
+                    </tr>
+                  </thead>
+                  <tbody id="taskRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Recent Events</h2>
+              </div>
+              <div id="eventList" class="event-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="tasksView">
+          <section class="panel wide">
+            <div class="panel-header">
+              <h2>Task Board</h2>
+              <select id="statusFilter">
+                <option value="">All statuses</option>
+                <option>Backlog</option>
+                <option>In Progress</option>
+                <option>Blocked</option>
+                <option>Done</option>
+                <option>Verified</option>
+                <option>Iceboxed</option>
+              </select>
+            </div>
+            <div id="taskBoard" class="task-board"></div>
+          </section>
+        </section>
+
+        <section class="view" id="docsView">
+          <section class="panel wide">
+            <div class="panel-header">
+              <h2>Git Docs</h2>
+              <span>Canonical Markdown/YAML paths</span>
+            </div>
+            <div id="docList" class="doc-list"></div>
+          </section>
+        </section>
+
+        <section class="view" id="proposeView">
+          <div class="proposal-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Create Task MR</h2>
+              </div>
+              <form id="createTaskForm" class="form-stack">
+                <label>EW ID <input name="ew_id" placeholder="EW1" required /></label>
+                <label>Title <input name="title" placeholder="Draft concept doc" required /></label>
+                <label>Assigned To <input name="assigned_to" placeholder="Samantha" required /></label>
+                <label>Role <input name="role" placeholder="PM" /></label>
+                <label>Expected Output <input name="expected_output" placeholder="Design Doc" required /></label>
+                <button type="submit">Create MR Proposal</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Edit File MR</h2>
+              </div>
+              <form id="editFileForm" class="form-stack">
+                <label>Path <input name="path" placeholder="projects/PROJ1/ews/EW1.md" required /></label>
+                <label>Commit Message <input name="message" placeholder="Update EW1 scope" required /></label>
+                <label>Content <textarea name="content" rows="9" required></textarea></label>
+                <button type="submit">Create MR Proposal</button>
+              </form>
+            </section>
+          </div>
+
+          <section class="panel wide">
+            <div class="panel-header">
+              <h2>Proposal Result</h2>
+            </div>
+            <pre id="proposalResult">{}</pre>
+          </section>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

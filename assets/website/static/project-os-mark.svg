@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="Project OS mark">
+  <rect width="96" height="96" rx="20" fill="#176b87"/>
+  <path d="M24 28h28c12 0 20 8 20 20s-8 20-20 20H24V28Z" fill="#ffffff"/>
+  <path d="M36 40h15c5 0 8 3 8 8s-3 8-8 8H36V40Z" fill="#7a4e9d"/>
+  <circle cx="70" cy="26" r="8" fill="#f2b84b"/>
+</svg>

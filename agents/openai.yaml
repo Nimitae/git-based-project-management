@@ -1,0 +1,3 @@
+display_name: Git-Based Project Management
+short_description: Git-first project OS with PR/MR website edits.
+default_prompt: Use this skill to initialize, operate, validate, and deploy a Git-first project management system with Markdown/YAML as source of truth and a Docker/Node.js website that turns human edits into GitHub PRs or GitLab MRs.
