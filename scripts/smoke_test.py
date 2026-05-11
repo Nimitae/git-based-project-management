@@ -61,11 +61,17 @@ def main() -> int:
         run(["init", "--repo", str(repo), "--name", "Demo Project Hub", "--owner", "Terence"])
         run(["update-task", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--status", "In Progress", "--user-update", "Smoke test update"])
         run(["submit-output", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--output", "https://example.com/output", "--message", "Smoke output"])
+        in_review = json.loads((repo / "projects" / "PROJ1-demo-project-hub" / "tasks" / "TASK1" / "task.yaml").read_text(encoding="utf-8"))
+        if in_review.get("status") != "In Review":
+            raise RuntimeError(f"submit-output should move TASK1 to In Review: {in_review.get('status')}")
         run(["review-task", "--repo", str(repo), "--task-id", "TASK1", "--reviewer", "Terence", "--decision", "approved", "--notes", "Smoke review"])
         historical = run_expect_fail(["update-task", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--status", "In Progress", "--user-update", "Should be blocked"])
         if "historical" not in (historical.stderr + historical.stdout).lower():
             raise RuntimeError(f"historical update guard did not explain the failure:\n{historical.stderr}")
+        run(["create-milestone", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke milestone", "--owner", "Terence"])
         run(["create-task", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke editable task", "--assigned-to", "Terence", "--role", "PM", "--expected-output", "Setup Confirmation"])
+        if not (repo / "projects" / "PROJ1-demo-project-hub" / "tasks" / "TASK2" / "notes.md").exists():
+            raise RuntimeError("task folder notes.md was not created")
         run(["register-asset", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke mockup", "--asset-type", "mockup", "--source-url", "https://example.com/mockup", "--used-by", "PROJ1,TASK1", "--owner", "Terence"])
         validate = run(["validate", "--repo", str(repo), "--json"])
         issues = json.loads(validate.stdout)["issues"]
@@ -74,6 +80,8 @@ def main() -> int:
             raise RuntimeError(f"validation errors: {errors}")
         run(["audit-docs", "--repo", str(repo)])
         run(["compile", "--repo", str(repo)])
+        if not (repo / ".project-hub" / "site-data" / "search-index.json").exists():
+            raise RuntimeError("search index was not generated")
         port = free_port()
         env = os.environ.copy()
         for key in ["GPM_LIVE_PROPOSALS", "GPM_PROVIDER", "GPM_GITHUB_REPO", "GPM_GITHUB_TOKEN", "GPM_GITLAB_PROJECT", "GPM_GITLAB_TOKEN"]:

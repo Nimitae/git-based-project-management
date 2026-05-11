@@ -10,23 +10,31 @@ const STATIC_DIR = path.resolve(process.env.GPM_STATIC_DIR || path.join(__dirnam
 const REPO = path.resolve(process.env.GPM_REPO || process.cwd());
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8787);
-const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "Done", "Verified", "Iceboxed"]);
+const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "In Review", "Done", "Verified", "Iceboxed"]);
 const PROJECT_STATUSES = new Set(["Planning", "Active", "Paused", "Shipped", "Archived"]);
-const DOC_TYPES = new Set(["proposal", "brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "playtest-plan", "playtest-report", "qa-report", "research-report", "asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"]);
+const MILESTONE_STATUSES = new Set(["Planned", "Active", "At Risk", "Done", "Archived"]);
+const DOC_TYPES = new Set(["proposal", "brief", "feature-brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "telemetry-spec", "api-contract", "playtest-plan", "playtest-session", "playtest-report", "qa-report", "qa-bug-report", "research-report", "asset-brief", "3d-asset-brief", "art-handoff", "3d-model-handoff", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"]);
 const HISTORICAL_TASK_STATUSES = new Set(["Done", "Verified", "Iceboxed"]);
 const HISTORICAL_DOC_STATUSES = new Set(["final", "archived", "historical"]);
 const DOC_SECTION_REQUIREMENTS = {
   proposal: ["Problem", "Proposed Direction", "Risks", "Decision Needed"],
   brief: ["Goal", "Audience", "Scope", "Success Criteria"],
+  "feature-brief": ["Player/User Value", "Scope", "Dependencies", "Success Metrics"],
   "game-design": ["Player Fantasy", "Core Loop", "Systems", "UX Notes", "Tuning Questions"],
   "technical-spec": ["Goal", "Architecture", "Interfaces", "Test Plan", "Rollout"],
   "frontend-spec": ["User Flow", "State", "Components", "API Contract", "Test Plan"],
   "backend-spec": ["Goal", "Data Model", "API", "Operations", "Test Plan"],
+  "telemetry-spec": ["Events", "Properties", "Consumers", "Privacy", "Validation"],
+  "api-contract": ["Endpoints", "Auth", "Errors", "Compatibility", "Tests"],
   "playtest-plan": ["Build", "Participants", "Test Goals", "Tasks", "Capture Plan"],
+  "playtest-session": ["Session", "Participants", "Script", "Observations", "Captures"],
   "playtest-report": ["Build", "Participants", "Findings", "Evidence", "Recommended Changes"],
   "qa-report": ["Build", "Scope", "Defects", "Risks", "Release Recommendation"],
+  "qa-bug-report": ["Build", "Reproduction", "Expected", "Actual", "Evidence"],
   "asset-brief": ["Purpose", "References", "Requirements", "Format", "Delivery"],
   "3d-asset-brief": ["Purpose", "References", "Model Requirements", "Texture Requirements", "Delivery"],
+  "art-handoff": ["Source Files", "Export Format", "Style References", "Acceptance", "Integration Notes"],
+  "3d-model-handoff": ["Scale", "Geometry", "Materials", "LODs", "Collision", "Export"],
   "mockup-review": ["Context", "Mockups", "Feedback", "Decision", "Follow-up Tasks"],
   "decision": ["Context", "Decision", "Options Considered", "Consequences"],
   "meeting-notes": ["Attendees", "Discussion", "Decisions", "Actions"],
@@ -88,6 +96,15 @@ async function exists(filePath) {
   }
 }
 
+async function fileSha256(filePath) {
+  try {
+    const bytes = await readFile(filePath);
+    return createHash("sha256").update(bytes).digest("hex");
+  } catch {
+    return "";
+  }
+}
+
 function parseFrontmatter(text) {
   if (!text.startsWith("---\n")) return [{}, text];
   const end = text.indexOf("\n---", 4);
@@ -124,7 +141,7 @@ function maxSuffix(ids, prefix) {
 }
 
 function allocateId(registry, kind) {
-  const prefix = kind === "project" ? "PROJ" : kind === "task" ? "TASK" : kind === "doc" ? "DOC" : kind === "asset" ? "ASSET" : kind === "event" ? "EVENT" : kind === "review" ? "REVIEW" : "ITEM";
+  const prefix = kind === "project" ? "PROJ" : kind === "milestone" ? "MILESTONE" : kind === "task" ? "TASK" : kind === "doc" ? "DOC" : kind === "asset" ? "ASSET" : kind === "event" ? "EVENT" : kind === "review" ? "REVIEW" : "ITEM";
   const section = kind === "doc" ? "docs" : `${kind}s`;
   const existing = Object.keys(registry[section] || {});
   registry.next_ids ||= {};
@@ -140,9 +157,10 @@ function projectFolder(projectId, name) {
 
 function docFolder(docType) {
   if (["proposal", "brief"].includes(docType)) return "proposals";
-  if (["game-design", "technical-spec", "frontend-spec", "backend-spec"].includes(docType)) return "design";
-  if (["playtest-plan", "playtest-report", "qa-report", "research-report"].includes(docType)) return "reports";
-  if (["asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note"].includes(docType)) return "production";
+  if (["game-design", "feature-brief"].includes(docType)) return "design";
+  if (["technical-spec", "frontend-spec", "backend-spec", "telemetry-spec", "api-contract"].includes(docType)) return "engineering";
+  if (["playtest-plan", "playtest-session", "playtest-report", "qa-report", "qa-bug-report", "research-report"].includes(docType)) return "reports";
+  if (["asset-brief", "3d-asset-brief", "art-handoff", "3d-model-handoff", "video-brief", "mockup-review", "build-note"].includes(docType)) return "production";
   if (["release-plan", "postmortem"].includes(docType)) return "release";
   if (docType === "decision") return "decisions";
   if (["meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"].includes(docType)) return "notes";
@@ -164,12 +182,22 @@ function appendJsonl(existing, record) {
   return prefix ? `${prefix}\n${line}\n` : `${line}\n`;
 }
 
+function approvedReviewExists(reviews, taskId) {
+  return reviews.some((row) => row.task_id === taskId && row.decision === "approved");
+}
+
+function taskFolderFromPath(taskPath) {
+  const clean = String(taskPath || "").replaceAll("\\", "/");
+  if (clean.endsWith("/task.yaml")) return clean.split("/").slice(0, -1).join("/");
+  return clean.endsWith(".yaml") ? clean.replace(/\.yaml$/, "") : clean;
+}
+
 async function validateRepo(registry) {
   const issues = [];
-  for (const section of ["projects", "tasks", "docs", "people", "next_ids"]) {
+  for (const section of ["projects", "milestones", "tasks", "docs", "people", "next_ids"]) {
     if (!(section in registry)) issues.push({ level: "error", code: "REGISTRY_SECTION", message: `${section} must exist`, path: "registry.yaml" });
   }
-  for (const [kind, section, prefix] of [["project", "projects", "PROJ"], ["task", "tasks", "TASK"], ["doc", "docs", "DOC"]]) {
+  for (const [kind, section, prefix] of [["project", "projects", "PROJ"], ["milestone", "milestones", "MILESTONE"], ["task", "tasks", "TASK"], ["doc", "docs", "DOC"]]) {
     const rows = registry[section] || {};
     const expected = maxSuffix(Object.keys(rows), prefix) + 1;
     if (Number(registry.next_ids?.[kind] || 1) < expected) issues.push({ level: "error", code: "NEXT_ID_STALE", message: `next_ids.${kind} should be at least ${expected}`, path: "registry.yaml" });
@@ -182,11 +210,25 @@ async function validateRepo(registry) {
   for (const [projectId, project] of Object.entries(registry.projects || {})) {
     if (!PROJECT_STATUSES.has(project.status)) issues.push({ level: "warn", code: "PROJECT_STATUS", message: `${projectId} status is unusual: ${project.status}`, path: project.path || "" });
     if (!project.owners?.length) issues.push({ level: "warn", code: "PROJECT_OWNER_MISSING", message: `${projectId} has no owners`, path: project.path || "" });
+    if (project.roadmap && !(await exists(safeRepoPath(project.roadmap)))) issues.push({ level: "warn", code: "PROJECT_ROADMAP_MISSING", message: `${projectId} roadmap file is missing`, path: project.roadmap });
+  }
+  for (const [milestoneId, ref] of Object.entries(registry.milestones || {})) {
+    let milestone = {};
+    try {
+      milestone = await readJsonSubset(safeRepoPath(ref.path), {});
+    } catch (error) {
+      issues.push({ level: "error", code: "MILESTONE_PARSE", message: error.message, path: ref.path || "" });
+      continue;
+    }
+    if (milestone.id !== milestoneId) issues.push({ level: "error", code: "MILESTONE_ID_MISMATCH", message: `${milestoneId} file id is ${milestone.id}`, path: ref.path || "" });
+    if (!registry.projects?.[milestone.project_id]) issues.push({ level: "error", code: "REL_MILESTONE_PROJECT", message: `${milestoneId} references missing project ${milestone.project_id}`, path: ref.path || "" });
+    if (!MILESTONE_STATUSES.has(milestone.status || "Planned")) issues.push({ level: "warn", code: "MILESTONE_STATUS", message: `${milestoneId} has unusual status ${milestone.status}`, path: ref.path || "" });
   }
   for (const [docId, doc] of Object.entries(registry.docs || {})) {
     if (!registry.projects?.[doc.project_id]) issues.push({ level: "error", code: "REL_DOC_PROJECT", message: `${docId} references missing project ${doc.project_id}`, path: doc.path || "" });
     if (!DOC_TYPES.has(doc.doc_type)) issues.push({ level: "warn", code: "DOC_TYPE", message: `${docId} has unusual doc_type ${doc.doc_type}`, path: doc.path || "" });
   }
+  const reviews = await readJsonl("reviews/task-reviews.jsonl");
   for (const [taskId, ref] of Object.entries(registry.tasks || {})) {
     let task = {};
     try {
@@ -198,9 +240,16 @@ async function validateRepo(registry) {
     if (task.id !== taskId) issues.push({ level: "error", code: "TASK_ID_MISMATCH", message: `${taskId} file id is ${task.id}`, path: ref.path || "" });
     if (!registry.projects?.[task.project_id]) issues.push({ level: "error", code: "REL_TASK_PROJECT", message: `${taskId} references missing project ${task.project_id}`, path: ref.path || "" });
     if (!TASK_STATUSES.has(task.status)) issues.push({ level: "error", code: "TASK_STATUS", message: `${taskId} has invalid status ${task.status}`, path: ref.path || "" });
+    if (task.status === "In Review" && !task.output) issues.push({ level: "error", code: "TASK_REVIEW_OUTPUT_MISSING", message: `${taskId} is In Review without output link`, path: ref.path || "" });
+    if (["Done", "Verified"].includes(task.status) && !task.output) issues.push({ level: "error", code: "TASK_OUTPUT_MISSING", message: `${taskId} is ${task.status} without output link`, path: ref.path || "" });
+    if (["Done", "Verified"].includes(task.status) && !approvedReviewExists(reviews, taskId)) issues.push({ level: "error", code: "TASK_APPROVED_REVIEW_MISSING", message: `${taskId} is ${task.status} without an approved review record`, path: ref.path || "" });
+    if (task.milestone && !registry.milestones?.[task.milestone]) issues.push({ level: "error", code: "REL_TASK_MILESTONE", message: `${taskId} references missing ${task.milestone}`, path: ref.path || "" });
     for (const dep of task.dependencies || []) {
       if (!registry.tasks?.[dep]) issues.push({ level: "error", code: "REL_TASK_DEPENDENCY", message: `${taskId} depends on missing ${dep}`, path: ref.path || "" });
     }
+  }
+  for (const rel of ["policies/output-requirements.yaml", "policies/definition-of-ready.yaml", "policies/definition-of-done.yaml", "policies/review-gates.yaml", "policies/role-permissions.yaml", "policies/storage-policy.yaml", "policies/wiki-guidelines.md", "policies/terminology.yaml", "policies/branch-protection.md", "policies/agent-operating-rules.md"]) {
+    if (!(await exists(safeRepoPath(rel)))) issues.push({ level: "warn", code: "POLICY_MISSING", message: `${rel} is missing`, path: rel });
   }
   return issues;
 }
@@ -208,9 +257,12 @@ async function validateRepo(registry) {
 async function collectDocs(registry) {
   const docs = [];
   for (const [docId, row] of Object.entries(registry.docs || {})) {
-    const text = await readText(safeRepoPath(row.path), "");
+    const full = safeRepoPath(row.path);
+    const text = await readText(full, "");
     const [frontmatter, body] = parseFrontmatter(text);
-    docs.push({ id: docId, project_id: row.project_id || "", type: row.doc_type || frontmatter.type || "", title: markdownTitle(body, row.title || docId), path: row.path || "", owner: row.owner || "", status: row.status || "" });
+    const headings = body.split(/\r?\n/).filter((line) => line.startsWith("## ")).map((line) => line.slice(3).trim());
+    const plain = body.replace(/`([^`]*)`/g, "$1").replace(/\s+/g, " ").trim();
+    docs.push({ id: docId, project_id: row.project_id || "", type: row.doc_type || frontmatter.type || "", title: markdownTitle(body, row.title || docId), path: row.path || "", owner: row.owner || "", status: row.status || "", sha256: await fileSha256(full), headings, snippet: plain.slice(0, 280), search_text: plain.slice(0, 12000) });
   }
   return docs;
 }
@@ -225,9 +277,33 @@ async function collectTasks(registry) {
       task = { id: taskId, title: ref.title || "", status: "Invalid" };
     }
     const project = registry.projects?.[task.project_id || ref.project_id] || {};
-    tasks.push({ ...ref, ...task, id: taskId, path: ref.path, project_name: project.name || "" });
+    tasks.push({ ...ref, ...task, id: taskId, path: ref.path, folder: ref.folder || taskFolderFromPath(ref.path), project_name: project.name || "", sha256: ref.path ? await fileSha256(safeRepoPath(ref.path)) : "" });
   }
   return tasks;
+}
+
+async function collectMilestones(registry) {
+  const rows = [];
+  for (const [milestoneId, ref] of Object.entries(registry.milestones || {})) {
+    let milestone = {};
+    try {
+      milestone = await readJsonSubset(safeRepoPath(ref.path), {});
+    } catch {
+      milestone = { id: milestoneId, title: ref.title || "", status: "Invalid" };
+    }
+    rows.push({ ...ref, ...milestone, id: milestoneId, path: ref.path, sha256: ref.path ? await fileSha256(safeRepoPath(ref.path)) : "" });
+  }
+  return rows;
+}
+
+function buildSearchIndex(data) {
+  const rows = [];
+  for (const project of data.projects || []) rows.push({ kind: "project", id: project.id || "", title: project.name || "", path: project.readme || "", text: [project.name || "", project.summary || "", project.status || ""].join(" ") });
+  for (const milestone of data.milestones || []) rows.push({ kind: "milestone", id: milestone.id || "", title: milestone.title || "", path: milestone.path || "", text: JSON.stringify(milestone) });
+  for (const task of data.tasks || []) rows.push({ kind: "task", id: task.id || "", title: task.title || "", path: task.path || "", text: JSON.stringify(task) });
+  for (const doc of data.docs || []) rows.push({ kind: "doc", id: doc.id || "", title: doc.title || "", path: doc.path || "", text: [doc.title || "", doc.type || "", doc.owner || "", doc.search_text || ""].join(" ") });
+  for (const asset of data.assets || []) rows.push({ kind: "asset", id: asset.id || "", title: asset.title || "", path: asset.path || "", text: JSON.stringify(asset) });
+  return rows;
 }
 
 async function readJsonl(relPath) {
@@ -244,7 +320,7 @@ async function readJsonl(relPath) {
 async function compileData() {
   const registry = await loadRegistry();
   const issues = await validateRepo(registry);
-  return {
+  const data = {
     schema_version: registry.schema_version || 2,
     repo_name: registry.name || path.basename(REPO),
     repo_path: REPO,
@@ -255,6 +331,7 @@ async function compileData() {
     git_commit: "",
     generated_at: nowIso(),
     projects: Object.entries(registry.projects || {}).map(([id, value]) => ({ id, ...value })),
+    milestones: await collectMilestones(registry),
     docs: await collectDocs(registry),
     tasks: await collectTasks(registry),
     assets: Object.entries(registry.assets || {}).map(([id, value]) => ({ id, ...value })),
@@ -263,16 +340,43 @@ async function compileData() {
     reviews: await readJsonl("reviews/task-reviews.jsonl"),
     validation: { issues }
   };
+  data.search_index = buildSearchIndex(data);
+  return data;
 }
 
 function createTaskPayload(registry, payload) {
   const project = registry.projects?.[payload.project_id];
   if (!project) throw new Error(`missing project ${payload.project_id}`);
   const taskId = allocateId(registry, "task");
-  const taskPath = `projects/${projectFolder(payload.project_id, project.name)}/tasks/${taskId}.yaml`;
-  const task = { id: taskId, project_id: payload.project_id, title: payload.title || "", assigned_to: payload.assigned_to || "", role: payload.role || "", status: "Backlog", checkpoint: "Drafting", priority: "Medium", deadline: "", expected_output: payload.expected_output || "", acceptance_criteria: [], dependencies: [], target_repo: "", output: "", blocker: "", ai_update: "", user_update: "" };
-  registry.tasks[taskId] = { project_id: payload.project_id, path: taskPath, title: task.title, assigned_to: task.assigned_to, status: "Backlog", expected_output: task.expected_output };
+  const taskFolder = `projects/${projectFolder(payload.project_id, project.name)}/tasks/${taskId}`;
+  const taskPath = `${taskFolder}/task.yaml`;
+  const task = { id: taskId, project_id: payload.project_id, title: payload.title || "", assigned_to: payload.assigned_to || "", role: payload.role || "", status: "Backlog", checkpoint: "Drafting", priority: "Medium", deadline: "", milestone: "", feature_area: "", release_target: "", estimate: "", risk: "", reviewer: "", expected_output: payload.expected_output || "", acceptance_criteria: [], dependencies: [], target_repo: "", output: "", blocker: "", ai_update: "", user_update: "", artifacts: { notes: `${taskFolder}/notes.md`, outputs: `${taskFolder}/outputs.md`, attachments: `${taskFolder}/attachments/` } };
+  registry.tasks[taskId] = { project_id: payload.project_id, path: taskPath, folder: taskFolder, title: task.title, assigned_to: task.assigned_to, status: "Backlog", milestone: "", feature_area: "", expected_output: task.expected_output };
   return { taskId, taskPath, task };
+}
+
+function taskSupportFiles(taskPath, task) {
+  const folder = taskFolderFromPath(taskPath);
+  const taskId = task.id || "TASK#";
+  const title = task.title || "Task";
+  return {
+    [`${folder}/notes.md`]: `# ${taskId} Notes - ${title}\n\n## Context\n\nLink relevant docs, decisions, assets, repos, and prior discussion.\n\n## Working Notes\n\nUse this for task-local notes that should travel with the task.\n`,
+    [`${folder}/outputs.md`]: `# ${taskId} Outputs - ${title}\n\n## Submitted Output\n\nLink the PR/MR, build, asset, report, document, capture, or release package.\n\n## Verification Notes\n\nRecord objective checks and reviewer observations.\n`,
+    [`${folder}/attachments/README.md`]: `# ${taskId} Attachments\n\nStore only small task-local references here. Large files should use Git LFS, releases/packages, object storage, or implementation repos, then be registered in the asset manifest.\n`
+  };
+}
+
+function createMilestonePayload(registry, payload) {
+  const project = registry.projects?.[payload.project_id];
+  if (!project) throw new Error(`missing project ${payload.project_id}`);
+  const milestoneId = allocateId(registry, "milestone");
+  const rel = `projects/${projectFolder(payload.project_id, project.name)}/planning/milestones/${milestoneId}.yaml`;
+  const milestone = { id: milestoneId, project_id: payload.project_id, title: payload.title || "", owner: payload.owner || "", status: payload.status || "Planned", start: "", target: "", goals: [], scope: [], exit_criteria: [], risks: [], linked_tasks: [], linked_docs: [] };
+  registry.milestones ||= {};
+  registry.milestones[milestoneId] = { project_id: payload.project_id, path: rel, title: milestone.title, owner: milestone.owner, status: milestone.status };
+  project.milestones ||= [];
+  project.milestones.push(milestoneId);
+  return { milestoneId, rel, milestone, project };
 }
 
 function createDocPayload(registry, payload) {
@@ -313,7 +417,7 @@ async function loadTaskRecord(registry, taskId) {
 
 function syncTaskRef(registry, taskId, taskPath, task) {
   registry.tasks ||= {};
-  registry.tasks[taskId] = { project_id: task.project_id || "", path: taskPath, title: task.title || "", assigned_to: task.assigned_to || "", status: task.status || "Backlog", expected_output: task.expected_output || "" };
+  registry.tasks[taskId] = { project_id: task.project_id || "", path: taskPath, folder: taskFolderFromPath(taskPath), title: task.title || "", assigned_to: task.assigned_to || "", status: task.status || "Backlog", milestone: task.milestone || "", feature_area: task.feature_area || "", expected_output: task.expected_output || "" };
 }
 
 function makeEvent(registry, task, actor, eventType, message) {
@@ -335,7 +439,7 @@ async function updateTaskActions(registry, payload) {
   const taskId = payload.task_id || "";
   const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
   if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to update ${taskId}; ${task.status} tasks are historical. Use review workflow or create a project note/decision for later context.`);
-  for (const field of ["status", "checkpoint", "priority", "assigned_to", "deadline", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]) {
+  for (const field of ["status", "checkpoint", "priority", "assigned_to", "deadline", "milestone", "feature_area", "release_target", "estimate", "risk", "reviewer", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]) {
     if (payload[field]) task[field] = payload[field];
   }
   if (payload.acceptance_criteria) task.acceptance_criteria = splitCsv(payload.acceptance_criteria);
@@ -352,7 +456,7 @@ async function updateTaskActions(registry, payload) {
 }
 
 async function submitOutputActions(registry, payload) {
-  const result = await updateTaskActions(registry, { ...payload, status: payload.status || "Done", checkpoint: payload.checkpoint || "Review", suppress_event: true });
+  const result = await updateTaskActions(registry, { ...payload, status: payload.status || "In Review", checkpoint: payload.checkpoint || "Review", suppress_event: true });
   const { task } = await loadTaskRecord(registry, payload.task_id || "");
   const event = makeEvent(registry, { ...task, id: payload.task_id }, payload.actor || "", "submitted_output", payload.message || payload.output || `Submitted output for ${payload.task_id}`);
   result.actions[0].content = dump(registry);
@@ -400,13 +504,30 @@ async function proposalActions(payload) {
     if (!filePath) throw new Error("edit_file requires path");
     const full = safeRepoPath(filePath);
     ensureEditAllowed(await loadRegistry(), filePath, payload);
+    const baseSha = payload.base_sha256 || payload.base_sha;
+    if (baseSha && existsSync(full) && (await fileSha256(full)) !== baseSha) throw new Error(`stale edit for ${filePath}: base_sha256 does not match current file`);
     return { title: payload.message || `Edit ${filePath}`, message: payload.message || `Edit ${filePath}`, actions: [{ action: existsSync(full) ? "update" : "create", file_path: filePath, content: payload.content || "" }] };
   }
   if (payload.type === "create_task") {
     const registry = await loadRegistry();
     const { taskId, taskPath, task } = createTaskPayload(registry, payload);
     const title = `Create ${taskId}: ${payload.title || ""}`;
-    return { title, message: title, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "create", file_path: taskPath, content: dump(task) }] };
+    const actions = [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "create", file_path: taskPath, content: dump(task) }];
+    for (const [rel, content] of Object.entries(taskSupportFiles(taskPath, task))) actions.push({ action: "create", file_path: rel, content });
+    return { title, message: title, actions };
+  }
+  if (payload.type === "create_milestone") {
+    const registry = await loadRegistry();
+    const { milestoneId, rel, milestone, project } = createMilestonePayload(registry, payload);
+    const actions = [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: project.path, content: dump(project) }, { action: "create", file_path: rel, content: dump(milestone) }];
+    if (project.roadmap) {
+      const roadmap = await readJsonSubset(safeRepoPath(project.roadmap), { project_id: project.id, milestones: [] });
+      roadmap.milestones ||= [];
+      roadmap.milestones.push(milestoneId);
+      actions.push({ action: "update", file_path: project.roadmap, content: dump(roadmap) });
+    }
+    const title = `Create ${milestoneId}: ${payload.title || ""}`;
+    return { title, message: title, actions };
   }
   if (payload.type === "create_doc") {
     const registry = await loadRegistry();

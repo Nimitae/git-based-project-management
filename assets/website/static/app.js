@@ -19,6 +19,7 @@ function escapeHtml(value) {
 function statusClass(status) {
   const value = (status || "").toLowerCase();
   if (value.includes("blocked")) return "blocked";
+  if (value.includes("review")) return "progress";
   if (value.includes("verified")) return "verified";
   if (value.includes("done")) return "done";
   if (value.includes("progress")) return "progress";
@@ -69,7 +70,7 @@ function renderDocs() {
   $("docList").innerHTML = docs.map((doc) => `
     <article class="doc-row">
       <strong>${escapeHtml(doc.id)} - ${escapeHtml(doc.title || doc.type)}</strong>
-      <span>${escapeHtml(doc.path)}</span>
+      <span>${escapeHtml(doc.path)}${doc.sha256 ? ` / ${escapeHtml(doc.sha256.slice(0, 12))}` : ""}</span>
     </article>
   `).join("") || `<div class="doc-row"><strong>No docs found</strong><span>Run compile or initialize the repo.</span></div>`;
 }
@@ -188,6 +189,18 @@ $("createDocForm").addEventListener("submit", (event) => {
   });
 });
 
+$("createMilestoneForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitProposal({
+    type: "create_milestone",
+    project_id: form.get("project_id"),
+    title: form.get("title"),
+    owner: form.get("owner"),
+    status: form.get("status")
+  });
+});
+
 $("registerAssetForm").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -211,7 +224,8 @@ $("editFileForm").addEventListener("submit", (event) => {
     type: "edit_file",
     path: form.get("path"),
     content: form.get("content"),
-    message: form.get("message")
+    message: form.get("message"),
+    base_sha256: form.get("base_sha256")
   });
 });
 
@@ -226,6 +240,9 @@ $("updateTaskForm").addEventListener("submit", (event) => {
     checkpoint: form.get("checkpoint"),
     output: form.get("output"),
     blocker: form.get("blocker"),
+    milestone: form.get("milestone"),
+    feature_area: form.get("feature_area"),
+    reviewer: form.get("reviewer"),
     user_update: form.get("user_update")
   });
 });

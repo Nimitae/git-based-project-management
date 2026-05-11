@@ -74,6 +74,8 @@ If the skill is vendored in a separate path, adapt the script path accordingly.
 
 Run the audit on every PR/MR and on a scheduled cadence before planning or release reviews. It is the check that catches master-file drift, missing policy files, terminology drift in live docs, and blocked tasks without blocker detail.
 
+Treat validation errors as merge blockers. In particular, a PR/MR that marks a task `Done` or `Verified` without output and an approved review record should be rejected before merge.
+
 ## Website Deployment
 
 Deploy the website as one of:

@@ -18,6 +18,8 @@ Git is canonical. The website, generated dashboards, issues, and exported views 
 ## Data Model
 
 - Project: a game, software product, tool, website, service, campaign, research stream, or internal process.
+- Roadmap: Now/Next/Later planning state for a project.
+- Milestone: a release, sprint, vertical slice, or major deliverable with goals and exit criteria.
 - Document: a durable Markdown record such as a proposal, game design, technical spec, playtest report, QA report, asset brief, video brief, release plan, postmortem, or decision.
 - Task: one owned unit of work with expected output and acceptance criteria.
 - Asset: a registered image, video, build, source art file, design file, audio clip, deck, dataset, or external artifact.
@@ -31,11 +33,21 @@ projects/
   PROJ1-sample-game/
     README.md
     project.yaml
+    planning/
+      roadmap.yaml
+      milestones/
+        MILESTONE1.yaml
     tasks/
-      TASK1.yaml
+      TASK1/
+        task.yaml
+        notes.md
+        outputs.md
+        attachments/
+          README.md
     docs/
       proposals/
       design/
+      engineering/
       reports/
       production/
       release/
@@ -51,16 +63,23 @@ Use these types unless a team extends the schema:
 
 - `proposal`
 - `brief`
+- `feature-brief`
 - `game-design`
 - `technical-spec`
 - `frontend-spec`
 - `backend-spec`
+- `telemetry-spec`
+- `api-contract`
 - `playtest-plan`
+- `playtest-session`
 - `playtest-report`
 - `qa-report`
+- `qa-bug-report`
 - `research-report`
 - `asset-brief`
 - `3d-asset-brief`
+- `art-handoff`
+- `3d-model-handoff`
 - `video-brief`
 - `mockup-review`
 - `build-note`
@@ -78,5 +97,7 @@ Use these types unless a team extends the schema:
 - Durable changes go through pull requests or merge requests.
 - The website creates proposals; it does not write directly to the default branch.
 - Task status and quick updates may use issue comments or append-only event files.
+- Submitted output moves a task to `In Review`. `Done` and `Verified` require output plus an approved review record.
+- If output cannot be objectively verified, reject the PR/MR. The failed check or review comment is the historical footprint.
 - Each managed project may link multiple implementation repos. Agents must read the management repo first, then inspect only the implementation repos relevant to their assigned work.
 - Live documents should be audited for terminology and scope drift. Historical records should be preserved unless an explicit correction is approved.

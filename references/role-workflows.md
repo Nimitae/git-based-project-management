@@ -8,12 +8,14 @@ Allowed:
 - Configure provider permissions, protected branches, CI, and website deployment.
 - Change schemas, templates, policies, and role rules.
 - Merge structural pull requests or merge requests after validation passes.
+- Reject PRs/MRs that try to mark work complete when objective output verification fails.
 
 ## Manager/PM
 
 Allowed:
 
 - Create projects, tasks, and documents.
+- Create roadmaps and milestones.
 - Edit project state, planning docs, repo links, task definitions, dependencies, asset manifests, and live notes through PRs/MRs.
 - Review validation and document-audit reports, then merge approved work if permitted.
 
@@ -21,6 +23,7 @@ Recommended commands:
 
 ```powershell
 git_pm.py create-project --repo . --name "Arena Prototype" --owner "Samantha" --type game
+git_pm.py create-milestone --repo . --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Samantha"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type game-design --title "Core Loop Design" --owner "Kai"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type meeting-notes --title "Kickoff Notes" --owner "Samantha"
 git_pm.py create-task --repo . --project-id PROJ1 --title "Implement loop prototype" --assigned-to "Kenneth" --expected-output "Pull Request"
@@ -33,6 +36,7 @@ git_pm.py audit-docs --repo .
 Allowed:
 
 - Read latest project docs and task specs after pulling the management repo.
+- Read the roadmap, current milestone, and task folder before changing work.
 - Inspect only the implementation repos linked to assigned tasks or project state.
 - Update assigned task status through website proposals, issues, or append-only events.
 - Submit output links.
@@ -42,6 +46,7 @@ Allowed:
 Not allowed by default:
 
 - Directly mark a task `Verified`.
+- Mark work `Done` without accessible output and an approved review.
 - Rewrite another user's task.
 - Change output verification policy.
 - Bypass PR/MR validation for durable changes.
@@ -52,18 +57,20 @@ Allowed:
 
 - Review outputs against `policies/output-requirements.yaml`.
 - Append task review records.
-- Move task status from `Done` to `Verified` or back to `In Progress/Revising`.
+- Move task status from `In Review` to `Verified` or back to `In Progress/Revising`.
 
 Required:
 
 - Include concrete reasons for revise/fail decisions.
 - Keep reviews append-only.
+- Reject objective verification failures instead of merging invalid `Done` state.
 
 ## Field Authority
 
 Use PRs/MRs for:
 
 - Project state.
+- Roadmaps and milestones.
 - Task specs.
 - Dependencies.
 - Acceptance criteria.

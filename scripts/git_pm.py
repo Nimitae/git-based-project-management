@@ -23,22 +23,30 @@ from urllib import error, parse, request
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = SKILL_ROOT / "assets" / "website" / "static"
-TASK_STATUSES = {"Backlog", "In Progress", "Blocked", "Done", "Verified", "Iceboxed"}
-CHECKPOINTS = {"", "Drafting", "Ready", "Review", "Revising", "Blocked"}
+TASK_STATUSES = {"Backlog", "In Progress", "Blocked", "In Review", "Done", "Verified", "Iceboxed"}
+CHECKPOINTS = {"", "Drafting", "Ready", "Review", "Revising", "Blocked", "Accepted"}
 PROJECT_STATUSES = {"Planning", "Active", "Paused", "Shipped", "Archived"}
+MILESTONE_STATUSES = {"Planned", "Active", "At Risk", "Done", "Archived"}
 DOC_TYPES = {
     "proposal",
     "brief",
+    "feature-brief",
     "game-design",
     "technical-spec",
     "frontend-spec",
     "backend-spec",
+    "telemetry-spec",
+    "api-contract",
     "playtest-plan",
+    "playtest-session",
     "playtest-report",
     "qa-report",
+    "qa-bug-report",
     "research-report",
     "asset-brief",
     "3d-asset-brief",
+    "art-handoff",
+    "3d-model-handoff",
     "video-brief",
     "mockup-review",
     "build-note",
@@ -58,16 +66,23 @@ HISTORICAL_TASK_STATUSES = {"Done", "Verified", "Iceboxed"}
 DOC_SECTION_REQUIREMENTS = {
     "proposal": ["Problem", "Proposed Direction", "Risks", "Decision Needed"],
     "brief": ["Goal", "Audience", "Scope", "Success Criteria"],
+    "feature-brief": ["Player/User Value", "Scope", "Dependencies", "Success Metrics"],
     "game-design": ["Player Fantasy", "Core Loop", "Systems", "UX Notes", "Tuning Questions"],
     "technical-spec": ["Goal", "Architecture", "Interfaces", "Test Plan", "Rollout"],
     "frontend-spec": ["User Flow", "State", "Components", "API Contract", "Test Plan"],
     "backend-spec": ["Goal", "Data Model", "API", "Operations", "Test Plan"],
+    "telemetry-spec": ["Events", "Properties", "Consumers", "Privacy", "Validation"],
+    "api-contract": ["Endpoints", "Auth", "Errors", "Compatibility", "Tests"],
     "playtest-plan": ["Build", "Participants", "Test Goals", "Tasks", "Capture Plan"],
+    "playtest-session": ["Session", "Participants", "Script", "Observations", "Captures"],
     "playtest-report": ["Build", "Participants", "Findings", "Evidence", "Recommended Changes"],
     "qa-report": ["Build", "Scope", "Defects", "Risks", "Release Recommendation"],
+    "qa-bug-report": ["Build", "Reproduction", "Expected", "Actual", "Evidence"],
     "research-report": ["Question", "Method", "Findings", "Recommendation"],
     "asset-brief": ["Purpose", "References", "Requirements", "Format", "Delivery"],
     "3d-asset-brief": ["Purpose", "References", "Model Requirements", "Texture Requirements", "Delivery"],
+    "art-handoff": ["Source Files", "Export Format", "Style References", "Acceptance", "Integration Notes"],
+    "3d-model-handoff": ["Scale", "Geometry", "Materials", "LODs", "Collision", "Export"],
     "video-brief": ["Goal", "Audience", "Script/Beats", "Assets Needed", "Delivery Specs"],
     "mockup-review": ["Context", "Mockups", "Feedback", "Decision", "Follow-up Tasks"],
     "build-note": ["Build", "Changes", "Known Issues", "Verification"],
@@ -87,6 +102,7 @@ ID_PREFIX = {
     "asset": "ASSET",
     "event": "EVENT",
     "review": "REVIEW",
+    "milestone": "MILESTONE",
 }
 
 
@@ -182,6 +198,12 @@ def git_commit(repo: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def file_sha256(path: Path) -> str:
+    if not path.exists() or path.is_dir():
+        return ""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def parse_frontmatter(text: str) -> tuple[dict, str]:
     if not text.startswith("---\n"):
         return {}, text
@@ -230,11 +252,13 @@ def project_folder(project_id: str, name: str) -> str:
 def doc_folder(doc_type: str) -> str:
     if doc_type in {"proposal", "brief"}:
         return "proposals"
-    if doc_type in {"game-design", "technical-spec", "frontend-spec", "backend-spec"}:
+    if doc_type in {"game-design", "feature-brief"}:
         return "design"
-    if doc_type in {"playtest-plan", "playtest-report", "qa-report", "research-report"}:
+    if doc_type in {"technical-spec", "frontend-spec", "backend-spec", "telemetry-spec", "api-contract"}:
+        return "engineering"
+    if doc_type in {"playtest-plan", "playtest-session", "playtest-report", "qa-report", "qa-bug-report", "research-report"}:
         return "reports"
-    if doc_type in {"asset-brief", "3d-asset-brief", "video-brief", "mockup-review", "build-note"}:
+    if doc_type in {"asset-brief", "3d-asset-brief", "art-handoff", "3d-model-handoff", "video-brief", "mockup-review", "build-note"}:
         return "production"
     if doc_type in {"release-plan", "postmortem"}:
         return "release"
@@ -253,6 +277,12 @@ def doc_body_template(doc_type: str) -> str:
             "Proposed Direction": "What should change, and what alternatives were considered?",
             "Risks": "List product, technical, schedule, art, or dependency risks.",
             "Decision Needed": "State the specific approval or decision needed.",
+        },
+        "feature-brief": {
+            "Player/User Value": "State the user outcome and why it matters now.",
+            "Scope": "List included and excluded behavior.",
+            "Dependencies": "Link prerequisite docs, repos, assets, APIs, or tasks.",
+            "Success Metrics": "Define measurable quality, product, or delivery signals.",
         },
         "game-design": {
             "Player Fantasy": "Describe the intended player experience.",
@@ -275,6 +305,27 @@ def doc_body_template(doc_type: str) -> str:
             "Operations": "List observability, rollout, backfill, and failure handling.",
             "Test Plan": "List automated and manual verification.",
         },
+        "telemetry-spec": {
+            "Events": "List events and when each fires.",
+            "Properties": "List names, types, allowed values, and ownership.",
+            "Consumers": "State dashboards, analysts, experiments, or game systems using the data.",
+            "Privacy": "Call out PII, retention, consent, and regional constraints.",
+            "Validation": "Describe test events, QA steps, and rollout checks.",
+        },
+        "api-contract": {
+            "Endpoints": "List routes, methods, payloads, and response shapes.",
+            "Auth": "State auth requirements and permissions.",
+            "Errors": "List error codes, retry rules, and client handling.",
+            "Compatibility": "Document versioning, migration, and rollout behavior.",
+            "Tests": "List contract, integration, load, and failure tests.",
+        },
+        "playtest-session": {
+            "Session": "Record date, build, facilitator, and environment.",
+            "Participants": "Summarize participant count and relevant profile.",
+            "Script": "List tasks, prompts, and timing.",
+            "Observations": "Capture durable findings and surprises.",
+            "Captures": "Link recordings, clips, screenshots, notes, or surveys.",
+        },
         "playtest-report": {
             "Build": "Link the build, branch, platform, and capture folder.",
             "Participants": "Summarize participant profile and session count.",
@@ -282,12 +333,34 @@ def doc_body_template(doc_type: str) -> str:
             "Evidence": "Link clips, screenshots, notes, telemetry, or survey data.",
             "Recommended Changes": "Create or link follow-up tasks.",
         },
+        "qa-bug-report": {
+            "Build": "State build, branch, platform, account, and environment.",
+            "Reproduction": "Write exact steps and frequency.",
+            "Expected": "Describe expected behavior.",
+            "Actual": "Describe actual behavior and impact.",
+            "Evidence": "Link screenshot, video, log, crash dump, or telemetry.",
+        },
         "mockup-review": {
             "Context": "State the feature, screen, user goal, and constraints.",
             "Mockups": "Link images, Figma frames, video captures, or prototypes.",
             "Feedback": "Record design, art, engineering, and PM feedback.",
             "Decision": "State approved direction or requested revision.",
             "Follow-up Tasks": "Link generated tasks or owners.",
+        },
+        "art-handoff": {
+            "Source Files": "Link source art, license notes, and ownership.",
+            "Export Format": "State required format, dimensions, naming, and variants.",
+            "Style References": "Link approved references and art direction notes.",
+            "Acceptance": "Define review checks for readability, style, and integration.",
+            "Integration Notes": "Call out engine/import rules and dependencies.",
+        },
+        "3d-model-handoff": {
+            "Scale": "State units, pivots, orientation, and gameplay scale.",
+            "Geometry": "List polycount, topology, naming, and hierarchy expectations.",
+            "Materials": "List texture sets, shader assumptions, and compression.",
+            "LODs": "Define LOD count, thresholds, and budgets.",
+            "Collision": "Describe collision proxies and navigation constraints.",
+            "Export": "State GLB/FBX/Blend packaging and validation checks.",
         },
         "meeting-notes": {
             "Attendees": "List attendees and roles.",
@@ -348,13 +421,16 @@ def make_project_record(project_id: str, name: str, owner: str, project_type: st
         "summary": "Describe the product, game, tool, or project outcome.",
         "path": f"projects/{folder}/project.yaml",
         "readme": f"projects/{folder}/README.md",
+        "roadmap": f"projects/{folder}/planning/roadmap.yaml",
         "repos": [],
+        "milestones": [],
     }
 
 
 def make_task(task_id: str, project_id: str, project_name: str, title: str, assigned_to: str, role: str, expected_output: str) -> tuple[str, dict, dict]:
     folder = project_folder(project_id, project_name)
-    path = f"projects/{folder}/tasks/{task_id}.yaml"
+    task_folder = f"projects/{folder}/tasks/{task_id}"
+    path = f"{task_folder}/task.yaml"
     task = {
         "id": task_id,
         "project_id": project_id,
@@ -365,6 +441,12 @@ def make_task(task_id: str, project_id: str, project_name: str, title: str, assi
         "checkpoint": "Drafting",
         "priority": "Medium",
         "deadline": "",
+        "milestone": "",
+        "feature_area": "",
+        "release_target": "",
+        "estimate": "",
+        "risk": "",
+        "reviewer": "",
         "expected_output": expected_output,
         "acceptance_criteria": ["Repository validates", "Website loads locally"],
         "dependencies": [],
@@ -373,16 +455,57 @@ def make_task(task_id: str, project_id: str, project_name: str, title: str, assi
         "blocker": "",
         "ai_update": "",
         "user_update": "",
+        "artifacts": {
+            "notes": f"{task_folder}/notes.md",
+            "outputs": f"{task_folder}/outputs.md",
+            "attachments": f"{task_folder}/attachments/",
+        },
     }
     ref = {
         "project_id": project_id,
         "path": path,
+        "folder": task_folder,
         "title": title,
         "assigned_to": assigned_to,
         "status": "Backlog",
+        "milestone": "",
+        "feature_area": "",
         "expected_output": expected_output,
     }
     return path, task, ref
+
+
+def make_milestone(milestone_id: str, project_id: str, project_name: str, title: str, owner: str, status: str = "Planned") -> tuple[str, dict, dict]:
+    folder = project_folder(project_id, project_name)
+    path = f"projects/{folder}/planning/milestones/{milestone_id}.yaml"
+    milestone = {
+        "id": milestone_id,
+        "project_id": project_id,
+        "title": title,
+        "owner": owner,
+        "status": status,
+        "start": "",
+        "target": "",
+        "goals": [],
+        "scope": [],
+        "exit_criteria": [],
+        "risks": [],
+        "linked_tasks": [],
+        "linked_docs": [],
+    }
+    ref = {"project_id": project_id, "path": path, "title": title, "owner": owner, "status": status}
+    return path, milestone, ref
+
+
+def task_support_files(task_path: str, task: dict) -> dict[str, str]:
+    folder = str(Path(task_path).parent).replace("\\", "/")
+    task_id = task.get("id", "TASK#")
+    title = task.get("title", "Task")
+    return {
+        f"{folder}/notes.md": f"# {task_id} Notes - {title}\n\n## Context\n\nLink relevant docs, decisions, assets, repos, and prior discussion.\n\n## Working Notes\n\nUse this for task-local notes that should travel with the task.\n",
+        f"{folder}/outputs.md": f"# {task_id} Outputs - {title}\n\n## Submitted Output\n\nLink the PR/MR, build, asset, report, document, capture, or release package.\n\n## Verification Notes\n\nRecord objective checks and reviewer observations.\n",
+        f"{folder}/attachments/README.md": f"# {task_id} Attachments\n\nStore only small task-local references here. Large files should use Git LFS, releases/packages, object storage, or implementation repos, then be registered in the asset manifest.\n",
+    }
 
 
 def make_doc(doc_id: str, project: dict, doc_type: str, title: str, owner: str) -> tuple[str, str, dict]:
@@ -413,14 +536,75 @@ def ensure_base_registry(name: str, owner: str, provider: str, github_repo: str,
         "provider": provider,
         "github": {"api_url": "https://api.github.com", "repo": github_repo, "default_branch": "main"},
         "gitlab": {"url": gitlab_url, "project_path": gitlab_project, "default_branch": "main"},
-        "next_ids": {"project": 2, "task": 2, "doc": 2, "asset": 1, "event": 1, "review": 1},
+        "next_ids": {"project": 2, "task": 2, "doc": 2, "asset": 1, "event": 1, "review": 1, "milestone": 1},
         "people": [{"name": owner, "role": "Owner", "email": ""}],
         "projects": {"PROJ1": project},
+        "milestones": {},
         "tasks": {"TASK1": task_ref},
         "docs": {"DOC1": doc_ref},
         "assets": {},
         "_seed": {"task_path": task_path, "task": task, "doc_path": doc_path},
     }
+
+
+def default_roadmap(project: dict) -> dict:
+    return {
+        "project_id": project["id"],
+        "horizon": "Now / Next / Later",
+        "now": ["Complete collaboration setup."],
+        "next": [],
+        "later": [],
+        "milestones": [],
+        "review_cadence": "Weekly",
+        "last_reviewed": "",
+    }
+
+
+def project_readme_body(project: dict) -> str:
+    return f"""
+## State
+
+- Status: {project['status']}
+- Current focus: complete collaboration setup.
+- Next review: TBD
+- Top blockers: None recorded.
+
+## Roadmap
+
+- Roadmap file: `{project.get('roadmap', '')}`
+- Current milestone: TBD
+- Release target: TBD
+
+## Repositories
+
+Add implementation repositories in `project.yaml` so collaborators and agents know where source code, game builds, websites, services, or tooling live.
+
+## Documents
+
+- DOC1 - Kickoff Proposal
+
+## Tasks
+
+- TASK1 - Confirm collaboration setup
+
+## Assets
+
+- Asset manifest: `assets/assets.yaml`
+
+## Open Decisions
+
+- None recorded.
+
+## Risks
+
+- None recorded.
+
+## Operating Notes
+
+- Cadence: weekly planning/review unless the team changes it.
+- Durable changes should go through PRs/MRs.
+- Daily execution updates should use task events or task-local notes.
+"""
 
 
 def write_initial_files(repo: Path, registry: dict) -> None:
@@ -445,6 +629,7 @@ Use it to track project state, tasks, proposals, design docs, playtest reports, 
 - `events/task-events.jsonl`: append-only collaboration updates.
 - `reviews/task-reviews.jsonl`: append-only output reviews.
 - `policies/wiki-guidelines.md`: required wiki shapes and task/asset linking rules.
+- `policies/review-gates.yaml`: rules for Done/Verified task states.
 
 Agents and humans should make durable changes through pull requests or merge requests.
 """,
@@ -455,28 +640,13 @@ Agents and humans should make durable changes through pull requests or merge req
         markdown_doc(
             {"id": "PROJ1", "type": "project", "owner": project["owners"][0], "status": project["status"]},
             f"PROJ1 - {project['name']}",
-            """
-## State
-
-- Status: Active
-- Current focus: complete collaboration setup.
-- Next review: TBD
-
-## Repositories
-
-Add implementation repositories in `project.yaml` so collaborators and agents know where source code, game builds, websites, services, or tooling live.
-
-## Documents
-
-- DOC1 - Kickoff Proposal
-
-## Tasks
-
-- TASK1 - Confirm collaboration setup
-""",
+            project_readme_body(project),
         ),
     )
+    write_text(repo / project["roadmap"], dump(default_roadmap(project)))
     write_text(repo / seed["task_path"], dump(seed["task"]))
+    for rel, text in task_support_files(seed["task_path"], seed["task"]).items():
+        write_text(repo / rel, text)
     doc_rel, doc_text, _doc_ref = make_doc("DOC1", project, "proposal", "Kickoff Proposal", project["owners"][0])
     write_text(repo / doc_rel, doc_text)
     for rel, text in template_files().items():
@@ -485,6 +655,13 @@ Add implementation repositories in `project.yaml` so collaborators and agents kn
     write_text(repo / "events/task-events.jsonl", "")
     write_text(repo / "reviews/task-reviews.jsonl", "")
     write_text(repo / "policies/output-requirements.yaml", dump(default_output_policy()))
+    write_text(repo / "policies/definition-of-ready.yaml", dump(default_definition_of_ready_policy()))
+    write_text(repo / "policies/definition-of-done.yaml", dump(default_definition_of_done_policy()))
+    write_text(repo / "policies/review-gates.yaml", dump(default_review_gates_policy()))
+    write_text(repo / "policies/role-permissions.yaml", dump(default_role_permissions_policy()))
+    write_text(repo / "policies/storage-policy.yaml", dump(default_storage_policy()))
+    write_text(repo / "policies/branch-protection.md", branch_protection_doc())
+    write_text(repo / "policies/agent-operating-rules.md", agent_operating_rules_doc())
     write_text(repo / "policies/wiki-guidelines.md", wiki_guidelines_doc())
     write_text(repo / "policies/terminology.yaml", dump(default_terminology_policy()))
     (repo / ".project-hub/site-data").mkdir(parents=True, exist_ok=True)
@@ -492,7 +669,19 @@ Add implementation repositories in `project.yaml` so collaborators and agents kn
 
 def template_files() -> dict[str, str]:
     files = {f"templates/{doc_type}.md": f"# {doc_type.replace('-', ' ').title()}\n\n{doc_body_template(doc_type)}\n" for doc_type in sorted(DOC_TYPES)}
-    files["templates/task.yaml"] = dump(make_task("TASK#", "PROJ#", "project", "Task title", "Owner", "Role", "Expected Output")[1])
+    task_path, task, _task_ref = make_task("TASK#", "PROJ#", "project", "Task title", "Owner", "Role", "Expected Output")
+    files["templates/task.yaml"] = dump(task)
+    files["templates/task-folder/task.yaml"] = dump(task)
+    for rel, text in task_support_files(task_path, task).items():
+        files["templates/task-folder/" + rel.split("/tasks/TASK#/", 1)[-1]] = text
+    files["templates/project-readme.md"] = markdown_doc({"id": "PROJ#", "type": "project", "owner": "Owner", "status": "Active"}, "PROJ# - Project Name", project_readme_body(make_project_record("PROJ#", "Project Name", "Owner", "game", "Active")))
+    files["templates/roadmap.yaml"] = dump(default_roadmap(make_project_record("PROJ#", "Project Name", "Owner", "game", "Active")))
+    files["templates/milestone.yaml"] = dump(make_milestone("MILESTONE#", "PROJ#", "Project Name", "Milestone title", "Owner")[1])
+    files["templates/policies/definition-of-ready.yaml"] = dump(default_definition_of_ready_policy())
+    files["templates/policies/definition-of-done.yaml"] = dump(default_definition_of_done_policy())
+    files["templates/policies/review-gates.yaml"] = dump(default_review_gates_policy())
+    files["templates/policies/role-permissions.yaml"] = dump(default_role_permissions_policy())
+    files["templates/policies/storage-policy.yaml"] = dump(default_storage_policy())
     files["templates/asset.yaml"] = dump({"title": "Asset title", "type": "mockup", "storage": "external-link", "path": "", "source_url": "", "used_by": ["PROJ#"], "owner": "Owner"})
     return files
 
@@ -513,6 +702,95 @@ def default_output_policy() -> dict:
             "Pull Request": {"matches": ["Pull Request", "Merge Request", "Implementation PR", "Implementation MR"], "manual_checks": ["PR/MR links to task", "Verification notes are present"]},
         },
     }
+
+
+def default_definition_of_ready_policy() -> dict:
+    return {
+        "schema_version": 1,
+        "ready_task_requires": ["assigned_to", "expected_output", "acceptance_criteria"],
+        "ready_task_recommends": ["target_repo", "milestone", "reviewer"],
+        "ready_doc_requires": ["owner", "status", "required_sections"],
+    }
+
+
+def default_definition_of_done_policy() -> dict:
+    return {
+        "schema_version": 1,
+        "done_requires": ["output", "acceptance_criteria", "approved_review"],
+        "verified_requires": ["output", "acceptance_criteria", "approved_review"],
+        "objective_failures_block_merge": True,
+        "subjective_failures_create_review": True,
+    }
+
+
+def default_review_gates_policy() -> dict:
+    return {
+        "schema_version": 1,
+        "submit_output_status": "In Review",
+        "approved_review_status": "Verified",
+        "changes_requested_status": "In Progress",
+        "reject_done_without_output": True,
+        "reject_done_without_approved_review": True,
+        "reject_verified_without_approved_review": True,
+        "allow_failed_subjective_review_history": True,
+    }
+
+
+def default_role_permissions_policy() -> dict:
+    return {
+        "schema_version": 1,
+        "roles": {
+            "owner": {"can_merge": True, "can_change_policies": True, "can_verify_tasks": True},
+            "manager": {"can_create_projects": True, "can_create_tasks": True, "can_create_docs": True, "can_review": True},
+            "assignee": {"can_update_assigned_tasks": True, "can_submit_output": True, "can_verify_tasks": False},
+            "reviewer": {"can_review": True, "can_verify_tasks": True},
+        },
+        "protected_statuses": ["Done", "Verified", "Iceboxed"],
+    }
+
+
+def default_storage_policy() -> dict:
+    return {
+        "schema_version": 1,
+        "small_previews": {"allowed_in_git": True, "recommended_max_mb": 5},
+        "large_artifacts": ["video", "build", "source-art", "3d-source", "dataset"],
+        "large_artifact_storage": ["git-lfs", "release", "package-registry", "object-storage", "implementation-repo"],
+        "must_register_assets": True,
+    }
+
+
+def branch_protection_doc() -> str:
+    return """# Branch Protection
+
+Protect the default branch.
+
+Required checks:
+
+- `validate`
+- `audit-docs`
+- website/runtime smoke test when website code changes
+
+Rules:
+
+- Durable changes merge through PRs/MRs.
+- Schema, policy, and template changes require owner/manager review.
+- A PR/MR that marks a task `Done` or `Verified` must pass objective validation before merge.
+- If output cannot be accessed or parsed, reject the PR/MR instead of merging an invalid completed state.
+"""
+
+
+def agent_operating_rules_doc() -> str:
+    return """# Agent Operating Rules
+
+Agents should:
+
+- Pull latest Git state before reading tasks or docs.
+- Read the project README, roadmap, task folder, linked docs, and linked implementation repos before changing work.
+- Use controller commands for IDs, task updates, docs, assets, events, reviews, and milestones.
+- Prefer `In Review` plus a submitted output over directly marking work `Done`.
+- Preserve historical records. Add decisions, project notes, events, or reviews instead of rewriting completed context.
+- Run `validate`, `audit-docs`, and `compile` before proposing a durable change.
+"""
 
 
 def default_terminology_policy() -> dict:
@@ -547,6 +825,8 @@ Every project README must include:
 - `Assets`: important mockups, videos, builds, art, models, captures, and external links.
 - `Operating Notes`: cadence, review expectations, and constraints.
 
+Projects should also keep `planning/roadmap.yaml` and optional `planning/milestones/MILESTONE#.yaml` files for roadmap, release, sprint, or vertical-slice planning.
+
 ## Documents
 
 Every durable document must be Markdown with frontmatter containing `id`, `project_id`, `type`, `owner`, and `status`.
@@ -561,7 +841,7 @@ Every document H1 should start with the document ID, such as `# DOC7 - Core Loop
 
 Live documents are the current source of truth and should be kept consistent when terminology, scope, or ownership changes. Examples: project README files, `project.yaml`, live design specs, current technical specs, active risk logs, and weekly updates.
 
-Historical records are evidence of what happened at the time and should not be rewritten for terminology cleanup. Examples: completed task YAML, verified task output records, finalized meeting notes, archived reports, review logs, and event logs.
+Historical records are evidence of what happened at the time and should not be rewritten for terminology cleanup. Examples: completed task folders, verified task output records, finalized meeting notes, archived reports, review logs, and event logs.
 
 If `heroes` is renamed to `champions`, update live docs and master files. Do not rewrite an old completed task such as `Create hero Athena`; instead add a decision record or project note explaining the terminology change.
 
@@ -576,7 +856,16 @@ Use `policies/terminology.yaml` for terminology changes that should be enforced 
 
 Every task should have an owner, status, expected output, acceptance criteria, and an output link before it can be verified.
 
+Use one folder per task:
+
+- `task.yaml`: durable state and acceptance criteria.
+- `notes.md`: task-local working context.
+- `outputs.md`: submitted output and verification notes.
+- `attachments/`: small task-local references only.
+
 Use `events/task-events.jsonl` for daily notes and handoffs. Use task YAML for durable task state.
+
+Submitted work should move to `In Review`. Do not mark work `Done` or `Verified` unless it has an output link and an approved review record. If the output cannot be objectively accessed or checked, reject the PR/MR rather than merging an invalid completed state. The failed check or review comment is the footprint.
 
 ## Assets
 
@@ -613,6 +902,17 @@ def max_suffix(ids: list[str], prefix: str) -> int:
     return max(values) if values else 0
 
 
+def approved_review_exists(reviews: list[dict], task_id: str) -> bool:
+    return any(row.get("task_id") == task_id and row.get("decision") == "approved" for row in reviews)
+
+
+def task_folder_from_path(path: str) -> str:
+    clean = path.replace("\\", "/")
+    if clean.endswith("/task.yaml"):
+        return clean.rsplit("/", 1)[0]
+    return clean.rsplit(".", 1)[0] if clean.endswith(".yaml") else clean
+
+
 def validate_repo(repo: Path) -> list[dict]:
     issues: list[dict] = []
     if not registry_path(repo).exists():
@@ -621,10 +921,10 @@ def validate_repo(repo: Path) -> list[dict]:
         registry = load_registry(repo)
     except GitPMError as exc:
         return [issue("error", "REGISTRY_PARSE", str(exc), "registry.yaml")]
-    for section in ["projects", "tasks", "docs", "people", "next_ids"]:
+    for section in ["projects", "milestones", "tasks", "docs", "people", "next_ids"]:
         if section not in registry:
             issues.append(issue("error", "REGISTRY_SECTION", f"{section} must exist", "registry.yaml"))
-    for kind, section in [("project", "projects"), ("task", "tasks"), ("doc", "docs")]:
+    for kind, section in [("project", "projects"), ("milestone", "milestones"), ("task", "tasks"), ("doc", "docs")]:
         prefix = ID_PREFIX[kind]
         records = registry.get(section, {})
         for entity_id, row in records.items():
@@ -644,6 +944,24 @@ def validate_repo(repo: Path) -> list[dict]:
         for repo_link in project.get("repos", []):
             if not repo_link.get("url"):
                 issues.append(issue("warn", "PROJECT_REPO_URL_MISSING", f"{project_id} has repo link without url", project.get("path", "")))
+        if project.get("roadmap") and not safe_repo_path(repo, project.get("roadmap", "")).exists():
+            issues.append(issue("warn", "PROJECT_ROADMAP_MISSING", f"{project_id} roadmap file is missing", project.get("roadmap", "")))
+    for milestone_id, milestone_ref in registry.get("milestones", {}).items():
+        path = milestone_ref.get("path", "")
+        try:
+            milestone = read_json_subset(safe_repo_path(repo, path), {})
+        except GitPMError as exc:
+            issues.append(issue("error", "MILESTONE_PARSE", str(exc), path))
+            continue
+        if milestone.get("id") != milestone_id:
+            issues.append(issue("error", "MILESTONE_ID_MISMATCH", f"{path} id is {milestone.get('id')}, expected {milestone_id}", path))
+        if milestone.get("project_id") not in registry.get("projects", {}):
+            issues.append(issue("error", "REL_MILESTONE_PROJECT", f"{milestone_id} references missing project {milestone.get('project_id')}", path))
+        if milestone.get("status", "Planned") not in MILESTONE_STATUSES:
+            issues.append(issue("warn", "MILESTONE_STATUS", f"{milestone_id} has unusual status {milestone.get('status')}", path))
+        for task_id in milestone.get("linked_tasks", []) or []:
+            if task_id not in registry.get("tasks", {}):
+                issues.append(issue("error", "REL_MILESTONE_TASK", f"{milestone_id} links missing {task_id}", path))
     for doc_id, doc in registry.get("docs", {}).items():
         if doc.get("project_id") not in registry.get("projects", {}):
             issues.append(issue("error", "REL_DOC_PROJECT", f"{doc_id} references missing project {doc.get('project_id')}", doc.get("path", "")))
@@ -664,6 +982,7 @@ def validate_repo(repo: Path) -> list[dict]:
                 for section in required_sections:
                     if section not in present:
                         issues.append(issue("warn", "DOC_SECTION_MISSING", f"{doc_id} is missing section '{section}'", doc.get("path", "")))
+    reviews = read_jsonl(repo / "reviews/task-reviews.jsonl")
     for task_id, task_ref in registry.get("tasks", {}).items():
         path = task_ref.get("path", "")
         try:
@@ -685,8 +1004,24 @@ def validate_repo(repo: Path) -> list[dict]:
             issues.append(issue("warn", "TASK_EXPECTED_OUTPUT_MISSING", f"{task_id} has no expected_output", path))
         if task.get("status") == "Blocked" and not task.get("blocker"):
             issues.append(issue("warn", "TASK_BLOCKER_MISSING", f"{task_id} is blocked without blocker detail", path))
+        if task.get("status") == "In Review" and not task.get("output"):
+            issues.append(issue("error", "TASK_REVIEW_OUTPUT_MISSING", f"{task_id} is In Review without output link", path))
         if task.get("status") in {"Done", "Verified"} and not task.get("output"):
-            issues.append(issue("warn", "TASK_OUTPUT_MISSING", f"{task_id} is {task.get('status')} without output link", path))
+            issues.append(issue("error", "TASK_OUTPUT_MISSING", f"{task_id} is {task.get('status')} without output link", path))
+        if task.get("status") in {"Done", "Verified"} and not approved_review_exists(reviews, task_id):
+            issues.append(issue("error", "TASK_APPROVED_REVIEW_MISSING", f"{task_id} is {task.get('status')} without an approved review record", path))
+        if task.get("status") in {"Done", "Verified"} and not task.get("acceptance_criteria"):
+            issues.append(issue("error", "TASK_ACCEPTANCE_MISSING", f"{task_id} is {task.get('status')} without acceptance criteria", path))
+        if task.get("status") in {"Done", "Verified"} and task.get("blocker"):
+            issues.append(issue("warn", "TASK_DONE_BLOCKED", f"{task_id} is {task.get('status')} but still has blocker text", path))
+        if path.endswith("/task.yaml"):
+            folder = task_folder_from_path(path)
+            for rel in [f"{folder}/notes.md", f"{folder}/outputs.md", f"{folder}/attachments/README.md"]:
+                if not safe_repo_path(repo, rel).exists():
+                    issues.append(issue("warn", "TASK_FOLDER_FILE_MISSING", f"{task_id} task folder is missing {rel.rsplit('/', 1)[-1]}", rel))
+        milestone = task.get("milestone")
+        if milestone and milestone not in registry.get("milestones", {}):
+            issues.append(issue("error", "REL_TASK_MILESTONE", f"{task_id} references missing {milestone}", path))
         for dep in task.get("dependencies", []) or []:
             if dep not in registry.get("tasks", {}):
                 issues.append(issue("error", "REL_TASK_DEPENDENCY", f"{task_id} depends on missing {dep}", path))
@@ -695,7 +1030,18 @@ def validate_repo(repo: Path) -> list[dict]:
             issues.append(issue("error", "ASSET_ID_FORMAT", f"{asset_id} should match ASSET#", "registry.yaml"))
         if not asset.get("path") and not asset.get("source_url"):
             issues.append(issue("warn", "ASSET_LINK_MISSING", f"{asset_id} has no path or source_url", "registry.yaml"))
-    for rel in ["policies/output-requirements.yaml", "policies/wiki-guidelines.md", "policies/terminology.yaml"]:
+    for rel in [
+        "policies/output-requirements.yaml",
+        "policies/definition-of-ready.yaml",
+        "policies/definition-of-done.yaml",
+        "policies/review-gates.yaml",
+        "policies/role-permissions.yaml",
+        "policies/storage-policy.yaml",
+        "policies/wiki-guidelines.md",
+        "policies/terminology.yaml",
+        "policies/branch-protection.md",
+        "policies/agent-operating-rules.md",
+    ]:
         if not safe_repo_path(repo, rel).exists():
             issues.append(issue("warn", "POLICY_MISSING", f"{rel} is missing", rel))
     return issues
@@ -717,8 +1063,11 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def collect_docs(repo: Path, registry: dict) -> list[dict]:
     docs = []
     for doc_id, row in registry.get("docs", {}).items():
-        text = read_text(safe_repo_path(repo, row.get("path", "")))
+        path = safe_repo_path(repo, row.get("path", ""))
+        text = read_text(path)
         frontmatter, body = parse_frontmatter(text)
+        headings = [line[3:].strip() for line in body.splitlines() if line.startswith("## ")]
+        plain = re.sub(r"\s+", " ", re.sub(r"`([^`]*)`", r"\1", body)).strip()
         docs.append(
             {
                 "id": doc_id,
@@ -728,6 +1077,10 @@ def collect_docs(repo: Path, registry: dict) -> list[dict]:
                 "path": row.get("path", ""),
                 "owner": row.get("owner", ""),
                 "status": row.get("status", ""),
+                "sha256": file_sha256(path),
+                "headings": headings,
+                "snippet": plain[:280],
+                "search_text": plain[:12000],
             }
         )
     return docs
@@ -745,14 +1098,46 @@ def collect_tasks(repo: Path, registry: dict) -> list[dict]:
         merged["id"] = task_id
         merged["path"] = ref.get("path", "")
         merged["project_name"] = project.get("name", "")
+        merged["folder"] = ref.get("folder") or task_folder_from_path(ref.get("path", ""))
+        merged["sha256"] = file_sha256(safe_repo_path(repo, ref.get("path", ""))) if ref.get("path") else ""
         tasks.append(merged)
     return tasks
+
+
+def collect_milestones(repo: Path, registry: dict) -> list[dict]:
+    rows = []
+    for milestone_id, ref in registry.get("milestones", {}).items():
+        try:
+            milestone = read_json_subset(safe_repo_path(repo, ref.get("path", "")), {})
+        except GitPMError:
+            milestone = {"id": milestone_id, "title": ref.get("title", ""), "status": "Invalid"}
+        merged = {**ref, **milestone}
+        merged["id"] = milestone_id
+        merged["path"] = ref.get("path", "")
+        merged["sha256"] = file_sha256(safe_repo_path(repo, ref.get("path", ""))) if ref.get("path") else ""
+        rows.append(merged)
+    return rows
+
+
+def build_search_index(data: dict) -> list[dict]:
+    rows = []
+    for project in data.get("projects", []):
+        rows.append({"kind": "project", "id": project.get("id", ""), "title": project.get("name", ""), "path": project.get("readme", ""), "text": " ".join([project.get("name", ""), project.get("summary", ""), project.get("status", "")])})
+    for milestone in data.get("milestones", []):
+        rows.append({"kind": "milestone", "id": milestone.get("id", ""), "title": milestone.get("title", ""), "path": milestone.get("path", ""), "text": json.dumps(milestone, ensure_ascii=False)})
+    for task in data.get("tasks", []):
+        rows.append({"kind": "task", "id": task.get("id", ""), "title": task.get("title", ""), "path": task.get("path", ""), "text": json.dumps(task, ensure_ascii=False)})
+    for doc in data.get("docs", []):
+        rows.append({"kind": "doc", "id": doc.get("id", ""), "title": doc.get("title", ""), "path": doc.get("path", ""), "text": " ".join([doc.get("title", ""), doc.get("type", ""), doc.get("owner", ""), doc.get("search_text", "")])})
+    for asset in data.get("assets", []):
+        rows.append({"kind": "asset", "id": asset.get("id", ""), "title": asset.get("title", ""), "path": asset.get("path", ""), "text": json.dumps(asset, ensure_ascii=False)})
+    return rows
 
 
 def compile_data(repo: Path) -> dict:
     registry = load_registry(repo)
     issues = validate_repo(repo)
-    return {
+    data = {
         "schema_version": registry.get("schema_version", 2),
         "repo_name": registry.get("name", repo.name),
         "repo_path": str(repo),
@@ -763,6 +1148,7 @@ def compile_data(repo: Path) -> dict:
         "git_commit": git_commit(repo),
         "generated_at": now_iso(),
         "projects": [{"id": key, **value} for key, value in registry.get("projects", {}).items()],
+        "milestones": collect_milestones(repo, registry),
         "docs": collect_docs(repo, registry),
         "tasks": collect_tasks(repo, registry),
         "assets": [{"id": key, **value} for key, value in registry.get("assets", {}).items()],
@@ -771,21 +1157,36 @@ def compile_data(repo: Path) -> dict:
         "reviews": read_jsonl(repo / "reviews/task-reviews.jsonl"),
         "validation": {"issues": issues},
     }
+    data["search_index"] = build_search_index(data)
+    return data
 
 
 def cmd_compile(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
     data = compile_data(repo)
     output = repo / ".project-hub/site-data/project-hub.json"
+    search_output = repo / ".project-hub/site-data/search-index.json"
     write_text(output, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-    print(json.dumps({"output": str(output), "issues": data["validation"]["issues"]}, indent=2) if args.json else f"Wrote {output}")
+    write_text(search_output, json.dumps(data["search_index"], indent=2, ensure_ascii=False) + "\n")
+    print(json.dumps({"output": str(output), "search_index": str(search_output), "issues": data["validation"]["issues"]}, indent=2) if args.json else f"Wrote {output} and {search_output}")
     return 1 if any(item["level"] == "error" for item in data["validation"]["issues"]) else 0
 
 
 def live_document_paths(registry: dict) -> list[str]:
-    paths = ["README.md", "registry.yaml", "policies/wiki-guidelines.md", "policies/output-requirements.yaml", "policies/terminology.yaml"]
+    paths = [
+        "README.md",
+        "registry.yaml",
+        "policies/wiki-guidelines.md",
+        "policies/output-requirements.yaml",
+        "policies/definition-of-ready.yaml",
+        "policies/definition-of-done.yaml",
+        "policies/review-gates.yaml",
+        "policies/role-permissions.yaml",
+        "policies/storage-policy.yaml",
+        "policies/terminology.yaml",
+    ]
     for project in registry.get("projects", {}).values():
-        for key in ["readme", "path"]:
+        for key in ["readme", "path", "roadmap"]:
             if project.get(key):
                 paths.append(project[key])
     for doc in registry.get("docs", {}).values():
@@ -873,7 +1274,8 @@ def cmd_create_project(args: argparse.Namespace) -> int:
     project = make_project_record(project_id, args.name, args.owner, args.type, args.status)
     registry.setdefault("projects", {})[project_id] = project
     write_text(repo / project["path"], dump(project))
-    write_text(repo / project["readme"], markdown_doc({"id": project_id, "type": "project", "owner": args.owner, "status": args.status}, f"{project_id} - {args.name}", "## State\n\nNew project.\n\n## Documents\n\n## Tasks\n"))
+    write_text(repo / project["readme"], markdown_doc({"id": project_id, "type": "project", "owner": args.owner, "status": args.status}, f"{project_id} - {args.name}", project_readme_body(project)))
+    write_text(repo / project["roadmap"], dump(default_roadmap(project)))
     write_text(repo / f"projects/{project_folder(project_id, args.name)}/assets/assets.yaml", dump({"assets": {}}))
     save_registry(repo, registry)
     print(f"Created {project_id} at {project['readme']}")
@@ -895,8 +1297,32 @@ def cmd_create_task(args: argparse.Namespace) -> int:
     registry = load_registry(repo)
     task_id, path, task = create_task_payload(registry, args.project_id, args.title, args.assigned_to, args.role, args.expected_output)
     write_text(repo / path, dump(task))
+    for rel, text in task_support_files(path, task).items():
+        write_text(repo / rel, text)
     save_registry(repo, registry)
     print(f"Created {task_id} at {path}")
+    return 0
+
+
+def cmd_create_milestone(args: argparse.Namespace) -> int:
+    repo = repo_arg(args.repo)
+    registry = load_registry(repo)
+    project = registry.get("projects", {}).get(args.project_id)
+    if not project:
+        raise GitPMError(f"missing project {args.project_id}")
+    milestone_id = allocate_id(registry, "milestone")
+    path, milestone, ref = make_milestone(milestone_id, args.project_id, project["name"], args.title, args.owner, args.status)
+    registry.setdefault("milestones", {})[milestone_id] = ref
+    project.setdefault("milestones", []).append(milestone_id)
+    write_text(repo / project["path"], dump(project))
+    roadmap_path = project.get("roadmap", "")
+    if roadmap_path:
+        roadmap = read_json_subset(safe_repo_path(repo, roadmap_path), default_roadmap(project))
+        roadmap.setdefault("milestones", []).append(milestone_id)
+        write_text(repo / roadmap_path, dump(roadmap))
+    write_text(repo / path, dump(milestone))
+    save_registry(repo, registry)
+    print(f"Created {milestone_id} at {path}")
     return 0
 
 
@@ -965,9 +1391,12 @@ def sync_task_ref(registry: dict, task_id: str, path: str, task: dict) -> None:
     registry.setdefault("tasks", {})[task_id] = {
         "project_id": task.get("project_id", ""),
         "path": path,
+        "folder": task_folder_from_path(path),
         "title": task.get("title", ""),
         "assigned_to": task.get("assigned_to", ""),
         "status": task.get("status", "Backlog"),
+        "milestone": task.get("milestone", ""),
+        "feature_area": task.get("feature_area", ""),
         "expected_output": task.get("expected_output", ""),
     }
 
@@ -1000,7 +1429,7 @@ def update_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str,
     path, task = load_task_record(repo, registry, task_id)
     if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
         raise GitPMError(f"refusing to update {task_id}; {task.get('status')} tasks are historical. Use review-task to request changes or create a project-note/decision for later context.")
-    for field in ["status", "checkpoint", "priority", "assigned_to", "deadline", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]:
+    for field in ["status", "checkpoint", "priority", "assigned_to", "deadline", "milestone", "feature_area", "release_target", "estimate", "risk", "reviewer", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]:
         value = payload.get(field)
         if value not in (None, ""):
             task[field] = value
@@ -1022,7 +1451,7 @@ def update_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str,
 
 
 def submit_output_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
-    payload = {**payload, "status": payload.get("status") or "Done", "checkpoint": payload.get("checkpoint") or "Review", "suppress_event": True}
+    payload = {**payload, "status": payload.get("status") or "In Review", "checkpoint": payload.get("checkpoint") or "Review", "suppress_event": True}
     title, _message, actions = update_task_actions(repo, registry, payload)
     task_id = payload.get("task_id", "")
     _path, task = load_task_record(repo, registry, task_id)
@@ -1242,6 +1671,8 @@ Use `git_pm.py update-task`, `submit-output`, `review-task`, and `register-asset
         task["acceptance_criteria"] = [f"{output} is linked in task output", "Task has a current user_update"]
         sync_task_ref(registry, task_id, path, task)
         write_text(repo / path, dump(task))
+        for rel, text in task_support_files(path, task).items():
+            write_text(repo / rel, text)
         created_tasks.append(task_id)
     save_registry(repo, registry)
     apply_payload(repo, {"type": "register_asset", "project_id": "PROJ1", "title": "HUD mockup v1", "asset_type": "mockup", "storage": "external-link", "source_url": "https://example.com/figma/hud-v1", "used_by": "PROJ1,TASK7", "owner": "Fern", "status": "review"})
@@ -1261,8 +1692,11 @@ def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
         rel = payload.get("path", "").replace("\\", "/").lstrip("/")
         if not rel:
             raise GitPMError("edit_file requires path")
-        safe_repo_path(repo, rel)
+        full = safe_repo_path(repo, rel)
         ensure_edit_allowed(load_registry(repo), rel, payload)
+        base_sha = payload.get("base_sha256") or payload.get("base_sha")
+        if base_sha and full.exists() and file_sha256(full) != base_sha:
+            raise GitPMError(f"stale edit for {rel}: base_sha256 does not match current file")
         action = "update" if (repo / rel).exists() else "create"
         return title, message, [{"action": action, "file_path": rel, "content": payload.get("content", "")}]
     if change_type == "create_task":
@@ -1276,10 +1710,34 @@ def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
             payload.get("expected_output", ""),
         )
         title = f"Create {task_id}: {payload.get('title', '')}"
-        return title, title, [
+        actions = [
             {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
             {"action": "create", "file_path": path, "content": dump(task)},
         ]
+        for rel, text in task_support_files(path, task).items():
+            actions.append({"action": "create", "file_path": rel, "content": text})
+        return title, title, actions
+    if change_type == "create_milestone":
+        registry = load_registry(repo)
+        project = registry.get("projects", {}).get(payload.get("project_id", ""))
+        if not project:
+            raise GitPMError(f"missing project {payload.get('project_id')}")
+        milestone_id = allocate_id(registry, "milestone")
+        path, milestone, ref = make_milestone(milestone_id, payload.get("project_id", ""), project["name"], payload.get("title", ""), payload.get("owner", ""), payload.get("status", "Planned"))
+        registry.setdefault("milestones", {})[milestone_id] = ref
+        project.setdefault("milestones", []).append(milestone_id)
+        actions = [
+            {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+            {"action": "update", "file_path": project["path"], "content": dump(project)},
+            {"action": "create", "file_path": path, "content": dump(milestone)},
+        ]
+        roadmap_path = project.get("roadmap", "")
+        if roadmap_path:
+            roadmap = read_json_subset(safe_repo_path(repo, roadmap_path), default_roadmap(project))
+            roadmap.setdefault("milestones", []).append(milestone_id)
+            actions.append({"action": "update", "file_path": roadmap_path, "content": dump(roadmap)})
+        title = f"Create {milestone_id}: {payload.get('title', '')}"
+        return title, title, actions
     if change_type == "create_doc":
         registry = load_registry(repo)
         project = registry.get("projects", {}).get(payload.get("project_id", ""))
@@ -1640,6 +2098,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--expected-output", required=True)
     p.set_defaults(func=cmd_create_task)
 
+    p = sub.add_parser("create-milestone")
+    add_common_repo(p)
+    p.add_argument("--project-id", required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--owner", required=True)
+    p.add_argument("--status", choices=sorted(MILESTONE_STATUSES), default="Planned")
+    p.set_defaults(func=cmd_create_milestone)
+
     p = sub.add_parser("create-doc")
     add_common_repo(p)
     p.add_argument("--project-id", required=True)
@@ -1657,6 +2123,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--priority", default="")
     p.add_argument("--assigned-to", default="")
     p.add_argument("--deadline", default="")
+    p.add_argument("--milestone", default="")
+    p.add_argument("--feature-area", default="")
+    p.add_argument("--release-target", default="")
+    p.add_argument("--estimate", default="")
+    p.add_argument("--risk", default="")
+    p.add_argument("--reviewer", default="")
     p.add_argument("--expected-output", default="")
     p.add_argument("--acceptance-criteria", default="")
     p.add_argument("--dependencies", default="")

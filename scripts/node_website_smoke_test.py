@@ -99,6 +99,8 @@ def main() -> int:
         data = http_json(base + "/api/data")
         if not data.get("tasks"):
             raise RuntimeError("Node website returned no tasks")
+        if not data.get("search_index"):
+            raise RuntimeError("Node website returned no search index")
         proposal = http_json(
             base + "/api/proposals",
             {
@@ -108,6 +110,16 @@ def main() -> int:
                 "assigned_to": "Terence",
                 "role": "PM",
                 "expected_output": "Setup Confirmation",
+            },
+        )
+        milestone_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "create_milestone",
+                "project_id": "PROJ1",
+                "title": "Node smoke milestone",
+                "owner": "Terence",
+                "status": "Planned",
             },
         )
         asset_proposal = http_json(
@@ -135,6 +147,8 @@ def main() -> int:
         proposal_dir = Path(proposal.get("proposal_dir", ""))
         if not proposal_dir.exists():
             raise RuntimeError(f"proposal directory was not created: {proposal}")
+        if not Path(milestone_proposal.get("proposal_dir", "")).exists():
+            raise RuntimeError(f"milestone proposal directory was not created: {milestone_proposal}")
         if not Path(asset_proposal.get("proposal_dir", "")).exists():
             raise RuntimeError(f"asset proposal directory was not created: {asset_proposal}")
         if not Path(doc_proposal.get("proposal_dir", "")).exists():

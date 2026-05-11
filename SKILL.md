@@ -25,6 +25,8 @@ Keep implementation codebases in their own GitHub/GitLab repos. This management 
 - Reviewer: verify task outputs against `policies/output-requirements.yaml`, append review records, and move tasks through review states.
 - Agent installer: run `doctor --interactive`, collect required credentials/access, and report missing permissions without storing long-lived secrets unless explicitly approved.
 
+Task lifecycle is `Backlog` -> `In Progress`/`Blocked` -> `In Review` -> `Done`/`Verified`. Prefer `submit-output` to move work into `In Review`; do not directly mark work `Done` or `Verified` unless output and approved review records are present.
+
 Read `references/role-workflows.md` when deciding which fields a role may change.
 
 ## Core Commands
@@ -37,6 +39,7 @@ Use `scripts/git_pm.py` for deterministic work:
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" validate --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" audit-docs --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" compile --repo ".\project-hub"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" create-milestone --repo ".\project-hub" --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Maya"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
 ```
@@ -93,10 +96,10 @@ Never commit tokens. Prefer environment variables:
 Use Git-local files for project intent:
 
 1. Pull latest Git state.
-2. Read task specs and Markdown docs from the local repo.
+2. Read project README, roadmap, milestone, task folder, and Markdown docs from the local repo.
 3. Use the website/API or controller to propose changes as PRs/MRs.
 4. Use direct task events or Issues for lightweight execution updates.
-5. Run `validate` before merging.
+5. Run `validate`, `audit-docs`, and `compile` before merging.
 
 Use PRs/MRs for durable changes:
 
@@ -129,6 +132,10 @@ git_pm.py review-task --repo . --task-id TASK3 --reviewer "Maya" --decision "app
 git_pm.py register-asset --repo . --project-id PROJ1 --title "HUD mockup v2" --asset-type "mockup" --source-url "https://example.com/mockup" --used-by "PROJ1,TASK4" --owner "Fern"
 ```
 
+New tasks live in folders: `task.yaml`, `notes.md`, `outputs.md`, and `attachments/README.md`. Use the task folder for task-local context and link large artifacts through the asset manifest.
+
+If a PR/MR marks a task `Done` but the output cannot be objectively verified, reject the PR/MR. The failed check or review comment is the footprint. If the output is accessible but quality/scope is insufficient, record `changes_requested` through `review-task`.
+
 Run `audit-docs` regularly, especially before planning reviews or release reviews. It checks validation, expected master files, live docs, terminology drift, and blocked task details. Configure terminology checks in `policies/terminology.yaml`; use narrow `allowed_occurrences` for exact historical references that should remain unchanged.
 
 Treat live docs and historical records differently. Update live docs when terminology changes, such as renaming `heroes` to `champions`. Do not rewrite completed task records, finalized meeting notes, archived reports, append-only events, or reviews just to match new terminology. Instead, create a `decision` or `project-note` that explains the change.
@@ -136,6 +143,7 @@ Treat live docs and historical records differently. Update live docs when termin
 ## References
 
 - `references/architecture.md`: canonical data model, Git/website/PR/MR boundaries, and collaboration rules.
+- `references/operating-model.md`: lifecycle, verification rule, planning structure, and task-folder model.
 - `references/schemas.md`: repository layout and file schemas.
 - `references/wiki-guidelines.md`: required wiki page shapes, document sections, asset registration, and task-linking rules.
 - `references/day-to-day-workflows.md`: role-specific workflows for PMs, game designers, programmers, artists, 3D artists, modellers, backend engineers, frontend engineers, and reviewers.
@@ -151,3 +159,4 @@ Treat live docs and historical records differently. Update live docs when termin
 - Do not treat generated website data as canonical. Rebuild it from Markdown/YAML.
 - Do not bypass validation when merging structural changes.
 - Do not rewrite completed tasks, finalized docs, append-only events, or reviews to match current terminology. Preserve them and add a live decision/project note instead.
+- Do not merge invalid completed state. Failed objective verification should block the PR/MR instead of producing a false `Done` record.

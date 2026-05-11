@@ -7,6 +7,7 @@ Every project `README.md` should be the first page a human or agent reads.
 Required sections:
 
 - `State`: current status, current focus, next review, and major blockers.
+- `Roadmap`: roadmap file, active milestone, release target, and review cadence.
 - `Repositories`: linked implementation repos and what each repo owns.
 - `Documents`: canonical docs grouped by design, engineering, production, reports, release, and decisions.
 - `Tasks`: active task IDs and owners.
@@ -45,9 +46,10 @@ Store non-task artifacts as documents or assets, not as loose files:
 - Risk tracking: `risk-log` in `docs/notes/`.
 - Retrospectives: `retro-notes` in `docs/notes/`.
 - Durable decisions: `decision` in `docs/decisions/`.
-- Designs/specs: `game-design`, `technical-spec`, `frontend-spec`, `backend-spec` in `docs/design/`.
-- Reports: `playtest-report`, `qa-report`, `research-report` in `docs/reports/`.
-- Asset/mockup briefs: `asset-brief`, `3d-asset-brief`, `video-brief`, `mockup-review` in `docs/production/`.
+- Designs/specs: `game-design`, `feature-brief` in `docs/design/`.
+- Engineering specs: `technical-spec`, `frontend-spec`, `backend-spec`, `telemetry-spec`, `api-contract` in `docs/engineering/`.
+- Reports: `playtest-plan`, `playtest-session`, `playtest-report`, `qa-report`, `qa-bug-report`, `research-report` in `docs/reports/`.
+- Asset/mockup briefs and handoffs: `asset-brief`, `3d-asset-brief`, `art-handoff`, `3d-model-handoff`, `video-brief`, `mockup-review` in `docs/production/`.
 
 Create them through `create-doc` so IDs and registry links stay consistent.
 
@@ -67,6 +69,13 @@ Create them through `create-doc` so IDs and registry links stay consistent.
 - `Systems`
 - `UX Notes`
 - `Tuning Questions`
+
+`feature-brief`:
+
+- `Player/User Value`
+- `Scope`
+- `Dependencies`
+- `Success Metrics`
 
 `technical-spec`:
 
@@ -92,6 +101,22 @@ Create them through `create-doc` so IDs and registry links stay consistent.
 - `Operations`
 - `Test Plan`
 
+`telemetry-spec`:
+
+- `Events`
+- `Properties`
+- `Consumers`
+- `Privacy`
+- `Validation`
+
+`api-contract`:
+
+- `Endpoints`
+- `Auth`
+- `Errors`
+- `Compatibility`
+- `Tests`
+
 `playtest-report`:
 
 - `Build`
@@ -99,6 +124,22 @@ Create them through `create-doc` so IDs and registry links stay consistent.
 - `Findings`
 - `Evidence`
 - `Recommended Changes`
+
+`playtest-session`:
+
+- `Session`
+- `Participants`
+- `Script`
+- `Observations`
+- `Captures`
+
+`qa-bug-report`:
+
+- `Build`
+- `Reproduction`
+- `Expected`
+- `Actual`
+- `Evidence`
 
 `mockup-review`:
 
@@ -156,7 +197,7 @@ Live documents are current truth. Keep them consistent when naming, scope, archi
 
 Historical records are evidence of what was true when work happened. Do not rewrite them just to match new terminology. Examples:
 
-- Completed or verified task YAML
+- Completed or verified task folders
 - Finalized meeting notes
 - Archived reports
 - Append-only events and reviews
@@ -179,6 +220,39 @@ Use `policies/terminology.yaml` for terminology changes that should be enforced 
 - `References`
 - Requirements sections appropriate to the asset.
 - `Delivery`
+
+`art-handoff`:
+
+- `Source Files`
+- `Export Format`
+- `Style References`
+- `Acceptance`
+- `Integration Notes`
+
+`3d-model-handoff`:
+
+- `Scale`
+- `Geometry`
+- `Materials`
+- `LODs`
+- `Collision`
+- `Export`
+
+## Task Folders And Review Gates
+
+New tasks should use:
+
+```text
+tasks/TASK123/
+  task.yaml
+  notes.md
+  outputs.md
+  attachments/README.md
+```
+
+`submit-output` moves a task to `In Review`. `Done` and `Verified` require output, acceptance criteria, and an approved review record.
+
+If a PR/MR marks a task `Done` but the output cannot be objectively verified, reject the PR/MR. The failed validation, failed CI check, or requested-change review is the historical footprint. Do not merge false completed state.
 
 ## Assets And Mockups
 

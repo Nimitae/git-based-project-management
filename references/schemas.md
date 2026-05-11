@@ -9,11 +9,21 @@ projects/
   PROJ1-sample-game/
     README.md
     project.yaml
+    planning/
+      roadmap.yaml
+      milestones/
+        MILESTONE1.yaml
     tasks/
-      TASK1.yaml
+      TASK1/
+        task.yaml
+        notes.md
+        outputs.md
+        attachments/
+          README.md
     docs/
       proposals/
       design/
+      engineering/
       reports/
       production/
       release/
@@ -28,6 +38,13 @@ reviews/
   task-reviews.jsonl
 policies/
   output-requirements.yaml
+  definition-of-ready.yaml
+  definition-of-done.yaml
+  review-gates.yaml
+  role-permissions.yaml
+  storage-policy.yaml
+  branch-protection.md
+  agent-operating-rules.md
 ```
 
 `registry.yaml`, task files, project files, and policy files use JSON-subset YAML by default. This keeps them easy for agents to parse without extra dependencies while remaining readable.
@@ -61,6 +78,7 @@ Required top-level fields:
   "summary": "Short project summary.",
   "path": "projects/PROJ1-sample-game/project.yaml",
   "readme": "projects/PROJ1-sample-game/README.md",
+  "roadmap": "projects/PROJ1-sample-game/planning/roadmap.yaml",
   "repos": [
     {
       "name": "game-client",
@@ -70,6 +88,43 @@ Required top-level fields:
       "role": "implementation"
     }
   ]
+}
+```
+
+## Roadmap And Milestone
+
+`planning/roadmap.yaml`:
+
+```json
+{
+  "project_id": "PROJ1",
+  "horizon": "Now / Next / Later",
+  "now": ["Ship FTUE telemetry"],
+  "next": ["Run tutorial playtest"],
+  "later": [],
+  "milestones": ["MILESTONE1"],
+  "review_cadence": "Weekly",
+  "last_reviewed": "2026-05-11"
+}
+```
+
+`planning/milestones/MILESTONE1.yaml`:
+
+```json
+{
+  "id": "MILESTONE1",
+  "project_id": "PROJ1",
+  "title": "FTUE vertical slice",
+  "owner": "Maya",
+  "status": "Active",
+  "start": "",
+  "target": "",
+  "goals": ["Instrument tutorial funnel"],
+  "scope": ["Client events", "Backend ingest", "Dashboard"],
+  "exit_criteria": ["Events verified in staging"],
+  "risks": [],
+  "linked_tasks": ["TASK1"],
+  "linked_docs": ["DOC1"]
 }
 ```
 
@@ -86,6 +141,12 @@ Required top-level fields:
   "checkpoint": "Drafting",
   "priority": "Medium",
   "deadline": "",
+  "milestone": "MILESTONE1",
+  "feature_area": "FTUE",
+  "release_target": "",
+  "estimate": "",
+  "risk": "",
+  "reviewer": "Maya",
   "expected_output": "Pull Request",
   "acceptance_criteria": ["Events are documented", "Tests pass"],
   "dependencies": [],
@@ -93,9 +154,26 @@ Required top-level fields:
   "output": "",
   "blocker": "",
   "ai_update": "",
-  "user_update": ""
+  "user_update": "",
+  "artifacts": {
+    "notes": "projects/PROJ1-sample-game/tasks/TASK1/notes.md",
+    "outputs": "projects/PROJ1-sample-game/tasks/TASK1/outputs.md",
+    "attachments": "projects/PROJ1-sample-game/tasks/TASK1/attachments/"
+  }
 }
 ```
+
+New tasks should be folder-based. `task.yaml` is durable state, `notes.md` is task-local context, `outputs.md` stores submitted artifacts and verification notes, and `attachments/` is only for small local references.
+
+Task statuses:
+
+- `Backlog`: accepted but not active.
+- `In Progress`: active work.
+- `Blocked`: blocked and must include blocker detail.
+- `In Review`: output submitted, awaiting checks/review.
+- `Done`: completed with output and approved review.
+- `Verified`: completed and passed verification gate.
+- `Iceboxed`: intentionally paused or closed.
 
 ## Document
 
@@ -186,16 +264,23 @@ Core document types:
 
 - `proposal`
 - `brief`
+- `feature-brief`
 - `game-design`
 - `technical-spec`
 - `frontend-spec`
 - `backend-spec`
+- `telemetry-spec`
+- `api-contract`
 - `playtest-plan`
+- `playtest-session`
 - `playtest-report`
 - `qa-report`
+- `qa-bug-report`
 - `research-report`
 - `asset-brief`
 - `3d-asset-brief`
+- `art-handoff`
+- `3d-model-handoff`
 - `video-brief`
 - `mockup-review`
 - `build-note`
@@ -212,9 +297,15 @@ Core document types:
 
 Live/master files include `README.md`, `registry.yaml`, project `README.md`, `project.yaml`, current docs with `draft/live/review` status, and policy files. These should be updated when terminology or project direction changes.
 
-Historical files include completed or verified task YAML, append-only event/review logs, archived reports, finalized meeting notes, and docs with `final/archived/historical` status. These should not be modified to chase current terminology. Create a `decision` or `project-note` instead.
+Historical files include completed or verified task folders, append-only event/review logs, archived reports, finalized meeting notes, and docs with `final/archived/historical` status. These should not be modified to chase current terminology. Create a `decision` or `project-note` instead.
 
 Example: if the team renames `heroes` to `champions`, update live docs. Do not rewrite a completed `TASK17` titled `Create hero Athena`; preserve the record and link the terminology decision.
+
+## Review Gate Policy
+
+`submit-output` should move work to `In Review`, not directly to `Done`. `Done` and `Verified` require output, acceptance criteria, and an approved review record. A PR/MR that directly marks a task `Done` without those fields should fail validation.
+
+If output cannot be objectively accessed or checked, reject the PR/MR. Use the failed check or review comment as the historical footprint.
 
 ## Terminology Policy
 

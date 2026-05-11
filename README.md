@@ -10,7 +10,7 @@ The system treats a Git repository as the source of truth for project state, tas
 - A deterministic controller script at `scripts/git_pm.py`.
 - A Node.js website runtime in `assets/website` that can run locally or in Docker.
 - Markdown and JSON-subset YAML schemas that are easy for humans and agents to search.
-- A project structure suited for software and game development: proposals, game design docs, technical specs, playtest reports, QA reports, release notes, videos, and asset manifests.
+- A project structure suited for software and game development: roadmap, milestones, task folders, proposals, game design docs, technical specs, playtest reports, QA reports, release notes, videos, and asset manifests.
 
 ## Repository Layout
 
@@ -31,7 +31,15 @@ projects/
   PROJ1-sample-game/
     README.md
     project.yaml
+    planning/
+      roadmap.yaml
+      milestones/
     tasks/
+      TASK1/
+        task.yaml
+        notes.md
+        outputs.md
+        attachments/
     docs/
     assets/
 templates/
@@ -52,6 +60,7 @@ python scripts/git_pm.py init --repo ".\project-hub" --name "Project Hub" --owne
 python scripts/git_pm.py validate --repo ".\project-hub"
 python scripts/git_pm.py audit-docs --repo ".\project-hub"
 python scripts/git_pm.py compile --repo ".\project-hub"
+python scripts/git_pm.py create-milestone --repo ".\project-hub" --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Your Name"
 python scripts/git_pm.py website --repo ".\project-hub" --port 8787
 ```
 
@@ -117,9 +126,12 @@ python scripts/node_website_smoke_test.py
 - Durable changes go through pull requests or merge requests.
 - The website is a human interface over Git, not the canonical database.
 - IDs are allocated by the controller or website backend, then validated before merge.
+- Roadmaps and milestones provide planning structure above tasks.
+- New tasks live in task folders with `task.yaml`, `notes.md`, `outputs.md`, and `attachments/`.
 - Day-to-day task updates use `update-task`, `add-event`, `submit-output`, `review-task`, and `register-asset`.
+- `submit-output` moves work to `In Review`; `Done` and `Verified` require output plus an approved review record.
 - Meeting minutes, project notes, weekly updates, risk logs, retros, and decisions are first-class documents created with `create-doc`.
 - Live docs should be updated when terminology or scope changes; completed tasks and finalized records should stay historical.
 - Large videos, builds, source art, and captures should live in Git LFS, releases/packages, object storage, or implementation repos, with references tracked in asset manifests.
 
-See `references/architecture.md`, `references/schemas.md`, `references/wiki-guidelines.md`, `references/day-to-day-workflows.md`, and `references/website.md` for the detailed model.
+See `references/operating-model.md`, `references/architecture.md`, `references/schemas.md`, `references/wiki-guidelines.md`, `references/day-to-day-workflows.md`, and `references/website.md` for the detailed model.

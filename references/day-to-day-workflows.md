@@ -16,6 +16,7 @@ git_pm.py audit-docs --repo .
 Typical updates:
 
 ```powershell
+git_pm.py create-milestone --repo . --project-id PROJ1 --title "Friday Playtest Milestone" --owner "Maya"
 git_pm.py create-task --repo . --project-id PROJ1 --title "Prepare Friday playtest checklist" --assigned-to "Maya" --role "Project Manager" --expected-output "Playtest Plan"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type playtest-plan --title "Friday Playtest Plan" --owner "Maya"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type meeting-notes --title "Sprint Planning 2026-05-11" --owner "Maya"
@@ -33,6 +34,7 @@ Daily read path:
 - Project README.
 - Current `game-design` docs.
 - Assigned design tasks.
+- Current milestone and task folder notes.
 - Recent playtest reports and mockup reviews.
 
 Typical updates:
@@ -48,7 +50,8 @@ git_pm.py submit-output --repo . --task-id TASK2 --actor "Gina" --output "projec
 
 Daily read path:
 
-- Assigned task YAML.
+- Assigned task folder.
+- Task `task.yaml`, `notes.md`, and `outputs.md`.
 - Linked design/technical docs.
 - `target_repo` implementation repo.
 - Dependencies and acceptance criteria.
@@ -59,6 +62,8 @@ Typical updates:
 git_pm.py update-task --repo . --task-id TASK3 --actor "Paul" --status "In Progress" --user-update "Prototype branch is running locally; tuning hooks still missing."
 git_pm.py submit-output --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/example/game-client/pull/42" --message "Ability prototype ready; reviewer should check input buffering and cooldown values."
 ```
+
+`submit-output` moves work to `In Review`. Do not manually mark a task `Done` unless the same PR/MR includes an accessible output and an approved review record.
 
 ## Artist
 
@@ -150,6 +155,8 @@ git_pm.py review-task --repo . --task-id TASK4 --reviewer "Gina" --decision "app
 
 Use `approved` only when output is accessible, acceptance criteria are satisfied, and the task can move to `Verified`.
 
+If output cannot be accessed or objectively checked, reject/request changes on the PR/MR. Do not merge invalid `Done` state just to preserve history; the failed check or review comment is the history.
+
 ## Website Workflow
 
 The website exposes the same flows:
@@ -159,6 +166,7 @@ The website exposes the same flows:
 - `Assets`: find mockups, art, videos, builds, and external files.
 - `Updates`: update task status, submit output, add events, and review tasks.
 - `Create`: create tasks/docs, register assets, and propose raw file edits.
+- Milestones: create milestone PR/MR proposals for roadmap planning.
 
 In dry-run mode, proposals are written under `.project-hub/proposals/`. In live mode, they become GitHub PRs or GitLab MRs.
 

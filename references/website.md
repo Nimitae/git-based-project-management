@@ -20,8 +20,10 @@ The bundled static UI supports:
 - Search across docs/tasks/assets/owners/status.
 - Task table with status and expected output.
 - Documents panel with Git paths.
+- Document rows include file hashes so raw edit proposals can carry a base hash.
 - Assets panel with mockups, art, models, videos, builds, and external links.
 - Create-task proposal form.
+- Create-milestone proposal form.
 - Create-document proposal form.
 - Update-task, submit-output, add-event, and review-task forms.
 - Register-asset proposal form.
@@ -73,7 +75,20 @@ Proposal payload examples:
   "type": "edit_file",
   "path": "projects/PROJ1-sample-game/docs/design/DOC2-core-loop.md",
   "content": "...full file content...",
-  "message": "Update core loop scope"
+  "message": "Update core loop scope",
+  "base_sha256": "optional-current-file-hash"
+}
+```
+
+If `base_sha256` is provided and the file has changed, the website rejects the proposal as stale.
+
+```json
+{
+  "type": "create_milestone",
+  "project_id": "PROJ1",
+  "title": "FTUE vertical slice",
+  "owner": "Maya",
+  "status": "Planned"
 }
 ```
 
@@ -178,4 +193,6 @@ For a manager asking an agent to deploy:
 - Status updates should be lightweight and visible in recent events.
 - Daily workflow forms should create the same canonical file changes an agent would create from the CLI.
 - Raw file edits should not be used to rewrite completed tasks, finalized docs, events, or reviews. Create a project note, decision, event, or review instead.
+- Raw file edits should include `base_sha256` when available so stale edits are rejected before PR/MR creation.
+- Submit-output should move work to `In Review`; invalid direct `Done` changes should be rejected by validation.
 - Every proposed change should show the target branch/MR or dry-run proposal path.

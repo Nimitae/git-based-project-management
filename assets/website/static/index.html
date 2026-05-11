@@ -92,6 +92,7 @@
                 <option>Backlog</option>
                 <option>In Progress</option>
                 <option>Blocked</option>
+                <option>In Review</option>
                 <option>Done</option>
                 <option>Verified</option>
                 <option>Iceboxed</option>
@@ -136,6 +137,7 @@
                     <option>Backlog</option>
                     <option>In Progress</option>
                     <option>Blocked</option>
+                    <option>In Review</option>
                     <option>Done</option>
                     <option>Verified</option>
                     <option>Iceboxed</option>
@@ -154,6 +156,9 @@
                 <label>User Update <textarea name="user_update" rows="4" placeholder="What changed, what is blocked, or what needs review"></textarea></label>
                 <label>Output Link <input name="output" placeholder="PR, video, build, mockup, or report URL" /></label>
                 <label>Blocker <input name="blocker" placeholder="Only required when blocked" /></label>
+                <label>Milestone <input name="milestone" placeholder="MILESTONE1" /></label>
+                <label>Feature Area <input name="feature_area" placeholder="FTUE, combat, backend, UI" /></label>
+                <label>Reviewer <input name="reviewer" placeholder="Maya" /></label>
                 <button type="submit">Propose Task Update</button>
               </form>
             </section>
@@ -230,6 +235,27 @@
 
             <section class="panel">
               <div class="panel-header">
+                <h2>Create Milestone PR/MR</h2>
+              </div>
+              <form id="createMilestoneForm" class="form-stack">
+                <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
+                <label>Title <input name="title" placeholder="FTUE vertical slice" required /></label>
+                <label>Owner <input name="owner" placeholder="Maya" required /></label>
+                <label>Status
+                  <select name="status">
+                    <option>Planned</option>
+                    <option>Active</option>
+                    <option>At Risk</option>
+                    <option>Done</option>
+                    <option>Archived</option>
+                  </select>
+                </label>
+                <button type="submit">Create PR/MR Proposal</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
                 <h2>Create Document PR/MR</h2>
               </div>
               <form id="createDocForm" class="form-stack">
@@ -239,15 +265,27 @@
                 <label>Document Type
                   <select name="doc_type">
                     <option>proposal</option>
+                    <option>feature-brief</option>
                     <option>game-design</option>
                     <option>technical-spec</option>
                     <option>frontend-spec</option>
                     <option>backend-spec</option>
+                    <option>telemetry-spec</option>
+                    <option>api-contract</option>
+                    <option>playtest-plan</option>
+                    <option>playtest-session</option>
                     <option>playtest-report</option>
                     <option>qa-report</option>
+                    <option>qa-bug-report</option>
                     <option>asset-brief</option>
                     <option>3d-asset-brief</option>
+                    <option>art-handoff</option>
+                    <option>3d-model-handoff</option>
+                    <option>video-brief</option>
                     <option>mockup-review</option>
+                    <option>build-note</option>
+                    <option>release-plan</option>
+                    <option>postmortem</option>
                     <option>decision</option>
                     <option>meeting-notes</option>
                     <option>project-note</option>
@@ -284,6 +322,7 @@
               <form id="editFileForm" class="form-stack">
                 <label>Path <input name="path" placeholder="projects/PROJ1-sample-game/docs/design/DOC2-core-loop.md" required /></label>
                 <label>Commit Message <input name="message" placeholder="Update project scope" required /></label>
+                <label>Base SHA-256 <input name="base_sha256" placeholder="Optional current file hash for conflict detection" /></label>
                 <label>Content <textarea name="content" rows="9" required></textarea></label>
                 <button type="submit">Create PR/MR Proposal</button>
               </form>
