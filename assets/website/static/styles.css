@@ -213,6 +213,11 @@ textarea {
   width: 100%;
 }
 
+.content-grid > .panel.wide,
+.proposal-grid > .panel.wide {
+  grid-column: 1 / -1;
+}
+
 .panel-header {
   display: flex;
   justify-content: space-between;

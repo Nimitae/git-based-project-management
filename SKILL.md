@@ -29,6 +29,33 @@ Task lifecycle is `Backlog` -> `In Progress`/`Blocked` -> `In Review` -> `Done`/
 
 Read `references/role-workflows.md` when deciding which fields a role may change.
 
+## Common User Intents
+
+When a user asks what they need to do today, pull latest Git state and run:
+
+```powershell
+git_pm.py my-tasks --repo . --user "Bao"
+```
+
+Then read the listed task folders, linked docs, recent events, and relevant implementation repos.
+
+When an owner proposes a new feature, create a reviewable feature proposal before creating execution tasks:
+
+```powershell
+git_pm.py propose-feature --repo . --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya" --problem "Tutorial drop-off is not measurable" --value "Team can diagnose onboarding friction" --scope "Client events, backend ingest, validation dashboard" --task-breakdown "Design event spec; implement client events; add backend ingest; verify staging data"
+```
+
+When a manager asks for project health, run:
+
+```powershell
+git_pm.py project-status --repo . --project-id PROJ1
+git_pm.py review-queue --repo .
+git_pm.py blocked-tasks --repo .
+git_pm.py stale-work --repo .
+```
+
+When a reviewer asks what needs review, start with `review-queue`, then inspect each task output before approval.
+
 ## Core Commands
 
 Use `scripts/git_pm.py` for deterministic work:
@@ -39,7 +66,11 @@ Use `scripts/git_pm.py` for deterministic work:
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" validate --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" audit-docs --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" compile --repo ".\project-hub"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" my-tasks --repo ".\project-hub" --user "Bao"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" project-status --repo ".\project-hub" --project-id PROJ1
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" review-queue --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" create-milestone --repo ".\project-hub" --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Maya"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" propose-feature --repo ".\project-hub" --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK3 --actor "Paul" --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --message "FTUE tracking implementation ready for review."
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
@@ -97,7 +128,7 @@ Never commit tokens. Prefer environment variables:
 Use Git-local files for project intent:
 
 1. Pull latest Git state.
-2. Read project README, roadmap, milestone, task folder, and Markdown docs from the local repo.
+2. Read `START_HERE_FOR_AGENTS.md`, project README, roadmap, milestone, task folder, and Markdown docs from the local repo.
 3. Use the website/API or controller to propose changes as PRs/MRs.
 4. Use direct task events and attempt/review commands for lightweight execution updates.
 5. Run `validate`, `audit-docs`, and `compile` before merging.
@@ -105,6 +136,7 @@ Use Git-local files for project intent:
 Use PRs/MRs for durable changes:
 
 - Project objective, scope, acceptance criteria, or decision changes.
+- Feature proposals and accepted feature scope.
 - Task creation/deletion/spec changes.
 - Dependency changes.
 - Asset manifest changes.
@@ -118,6 +150,7 @@ Use task events and attempt/review commands for operational updates:
 Use documents for durable artifacts beyond tasks:
 
 ```powershell
+git_pm.py propose-feature --repo . --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type meeting-notes --title "Sprint Planning 2026-05-11" --owner "Maya"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type project-note --title "FTUE Analytics Notes" --owner "Bao"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type risk-log --title "Release Risk Log" --owner "Maya"
@@ -153,6 +186,7 @@ Treat live docs and historical records differently. Update live docs when termin
 - `references/schemas.md`: repository layout and file schemas.
 - `references/wiki-guidelines.md`: required wiki page shapes, document sections, asset registration, and task-linking rules.
 - `references/day-to-day-workflows.md`: role-specific workflows for PMs, game designers, programmers, artists, 3D artists, modellers, backend engineers, frontend engineers, and reviewers.
+- `references/agent-entrypoints.md`: exact behavior for common day-to-day user prompts.
 - `references/role-workflows.md`: owner/manager/assignee/reviewer/agent rules.
 - `references/git-provider-setup.md`: GitHub/GitLab tokens, repository permissions, PR/MR creation, and deployment guidance.
 - `references/website.md`: website behavior, API endpoints, proposal flow, and deployment options.

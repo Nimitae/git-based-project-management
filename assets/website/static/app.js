@@ -1,7 +1,8 @@
 const state = {
   data: null,
   query: "",
-  status: ""
+  status: "",
+  myWorkOwner: ""
 };
 
 const $ = (id) => document.getElementById(id);
@@ -107,6 +108,49 @@ function renderReviewQueue() {
   `).join("") || `<div class="event"><strong>No review queue items</strong><span>Submitted, failed, withdrawn, and cancelled reviews will appear here.</span></div>`;
 }
 
+function renderMyWork() {
+  const owner = state.myWorkOwner.trim().toLowerCase();
+  const tasks = state.data ? state.data.tasks.filter((task) => {
+    if (!owner) return !["Done", "Verified", "Iceboxed"].includes(task.status);
+    return [task.assigned_to, task.reviewer].some((value) => String(value || "").toLowerCase() === owner) && !["Done", "Verified", "Iceboxed"].includes(task.status);
+  }) : [];
+  $("myWorkList").innerHTML = tasks.map((task) => `
+    <article class="task-card">
+      <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
+      <span>${escapeHtml(task.assigned_to || "Unassigned")} / ${escapeHtml(task.status || "Backlog")} / ${escapeHtml(task.expected_output || "No expected output")}</span>
+      <p>${escapeHtml(task.user_update || task.blocker || task.path || "")}</p>
+    </article>
+  `).join("") || `<div class="task-card"><strong>No matching work</strong><span>Enter an assignee or reviewer name.</span></div>`;
+}
+
+function renderHealth() {
+  const blocked = state.data ? (state.data.blocked_tasks || []) : [];
+  $("blockedTaskList").innerHTML = blocked.map((task) => `
+    <article class="event">
+      <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "")}</strong>
+      <span>${escapeHtml(task.assigned_to || "Unassigned")} / ${escapeHtml(task.status || "")}</span>
+      <p>${escapeHtml(task.blocker || task.user_update || "No blocker detail")}</p>
+    </article>
+  `).join("") || `<div class="event"><strong>No blocked tasks</strong><span>Blocked tasks with blocker text will appear here.</span></div>`;
+
+  const stale = state.data ? (state.data.stale_work || []) : [];
+  $("staleWorkList").innerHTML = stale.map((task) => `
+    <article class="event">
+      <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "")}</strong>
+      <span>${escapeHtml(task.assigned_to || "Unassigned")} / ${escapeHtml(task.status || "")} / ${task.age_days === null ? "no events" : `${escapeHtml(task.age_days)} days`}</span>
+      <p>${escapeHtml(task.latest_event?.message || task.user_update || task.path || "")}</p>
+    </article>
+  `).join("") || `<div class="event"><strong>No stale work</strong><span>Open tasks without recent events will appear here.</span></div>`;
+
+  const features = state.data ? (state.data.feature_proposals || []) : [];
+  $("featureProposalList").innerHTML = features.map((doc) => `
+    <article class="doc-row">
+      <strong>${escapeHtml(doc.id)} - ${escapeHtml(doc.title || "Feature proposal")}</strong>
+      <span>${escapeHtml(doc.status || "draft")} / ${escapeHtml(doc.owner || "Unowned")} / ${escapeHtml(doc.path || "")}</span>
+    </article>
+  `).join("") || `<div class="doc-row"><strong>No active feature proposals</strong><span>Use Create > Feature Proposal PR/MR to start one.</span></div>`;
+}
+
 function renderSummary() {
   const data = state.data;
   if (!data) return;
@@ -129,6 +173,8 @@ function render() {
   renderAssets();
   renderEvents();
   renderReviewQueue();
+  renderMyWork();
+  renderHealth();
 }
 
 async function loadData() {
@@ -175,6 +221,10 @@ $("statusFilter").addEventListener("change", (event) => {
   state.status = event.target.value;
   render();
 });
+$("myWorkOwner").addEventListener("input", (event) => {
+  state.myWorkOwner = event.target.value;
+  renderMyWork();
+});
 
 $("createTaskForm").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -198,6 +248,24 @@ $("createDocForm").addEventListener("submit", (event) => {
     title: form.get("title"),
     owner: form.get("owner"),
     doc_type: form.get("doc_type")
+  });
+});
+
+$("featureProposalForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitProposal({
+    type: "propose_feature",
+    project_id: form.get("project_id"),
+    title: form.get("title"),
+    owner: form.get("owner"),
+    problem: form.get("problem"),
+    value: form.get("value"),
+    scope: form.get("scope"),
+    non_goals: form.get("non_goals"),
+    risks: form.get("risks"),
+    task_breakdown: form.get("task_breakdown"),
+    decision_needed: form.get("decision_needed")
   });
 });
 

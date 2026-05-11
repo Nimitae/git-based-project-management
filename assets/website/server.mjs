@@ -14,12 +14,13 @@ const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "In Review",
 const PROJECT_STATUSES = new Set(["Planning", "Active", "Paused", "Shipped", "Archived"]);
 const MILESTONE_STATUSES = new Set(["Planned", "Active", "At Risk", "Done", "Archived"]);
 const ATTEMPT_EVENT_TYPES = new Set(["submitted_output", "output_attempted", "verification_failed", "output_withdrawn", "output_superseded", "review_cancelled"]);
-const DOC_TYPES = new Set(["proposal", "brief", "feature-brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "telemetry-spec", "api-contract", "playtest-plan", "playtest-session", "playtest-report", "qa-report", "qa-bug-report", "research-report", "asset-brief", "3d-asset-brief", "art-handoff", "3d-model-handoff", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"]);
+const DOC_TYPES = new Set(["proposal", "brief", "feature-proposal", "feature-brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "telemetry-spec", "api-contract", "playtest-plan", "playtest-session", "playtest-report", "qa-report", "qa-bug-report", "research-report", "asset-brief", "3d-asset-brief", "art-handoff", "3d-model-handoff", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"]);
 const HISTORICAL_TASK_STATUSES = new Set(["Done", "Verified", "Iceboxed"]);
 const HISTORICAL_DOC_STATUSES = new Set(["final", "archived", "historical"]);
 const DOC_SECTION_REQUIREMENTS = {
   proposal: ["Problem", "Proposed Direction", "Risks", "Decision Needed"],
   brief: ["Goal", "Audience", "Scope", "Success Criteria"],
+  "feature-proposal": ["Problem", "Player/User Value", "Proposed Scope", "Non-Goals", "Risks", "Task Breakdown", "Decision Needed"],
   "feature-brief": ["Player/User Value", "Scope", "Dependencies", "Success Metrics"],
   "game-design": ["Player Fantasy", "Core Loop", "Systems", "UX Notes", "Tuning Questions"],
   "technical-spec": ["Goal", "Architecture", "Interfaces", "Test Plan", "Rollout"],
@@ -157,7 +158,7 @@ function projectFolder(projectId, name) {
 }
 
 function docFolder(docType) {
-  if (["proposal", "brief"].includes(docType)) return "proposals";
+  if (["proposal", "brief", "feature-proposal"].includes(docType)) return "proposals";
   if (["game-design", "feature-brief"].includes(docType)) return "design";
   if (["technical-spec", "frontend-spec", "backend-spec", "telemetry-spec", "api-contract"].includes(docType)) return "engineering";
   if (["playtest-plan", "playtest-session", "playtest-report", "qa-report", "qa-bug-report", "research-report"].includes(docType)) return "reports";
@@ -358,6 +359,51 @@ function buildReviewQueue(tasks, events, reviews) {
   return rows;
 }
 
+function openTasks(tasks) {
+  return (tasks || []).filter((task) => !HISTORICAL_TASK_STATUSES.has(task.status || ""));
+}
+
+function blockedTasks(tasks) {
+  return (tasks || []).filter((task) => task.status === "Blocked" || task.blocker);
+}
+
+function staleWork(tasks, events, days = 3) {
+  const latestByTask = {};
+  for (const event of events || []) {
+    if (event.task_id) latestByTask[event.task_id] = event;
+  }
+  const now = Date.now();
+  return openTasks(tasks).map((task) => {
+    const latest = latestByTask[task.id] || {};
+    let ageDays = null;
+    if (latest.created_at) {
+      const time = Date.parse(latest.created_at);
+      if (!Number.isNaN(time)) ageDays = Math.max(0, Math.floor((now - time) / 86400000));
+    }
+    return { ...task, latest_event: latest, age_days: ageDays };
+  }).filter((task) => task.age_days === null || task.age_days >= days);
+}
+
+function featureProposals(docs) {
+  return (docs || []).filter((doc) => ["feature-proposal", "feature-brief"].includes(doc.type || "") && ["draft", "live", "review"].includes(doc.status || "draft"));
+}
+
+function projectStatusSummary(data) {
+  return {
+    counts: {
+      projects: (data.projects || []).length,
+      docs: (data.docs || []).length,
+      tasks: (data.tasks || []).length,
+      open_tasks: openTasks(data.tasks).length,
+      blocked_tasks: blockedTasks(data.tasks).length,
+      review_queue: (data.review_queue || []).length,
+      stale_work: (data.stale_work || []).length,
+      feature_proposals: (data.feature_proposals || []).length,
+      validation_issues: (data.validation?.issues || []).length
+    }
+  };
+}
+
 async function readJsonl(relPath) {
   const text = await readText(path.join(REPO, relPath), "");
   return text.split(/\r?\n/).filter(Boolean).map((line) => {
@@ -375,6 +421,7 @@ async function compileData() {
   const events = await readJsonl("events/task-events.jsonl");
   const reviews = await readJsonl("reviews/task-reviews.jsonl");
   const tasks = await collectTasks(registry);
+  const docs = await collectDocs(registry);
   const data = {
     schema_version: registry.schema_version || 2,
     repo_name: registry.name || path.basename(REPO),
@@ -387,7 +434,7 @@ async function compileData() {
     generated_at: nowIso(),
     projects: Object.entries(registry.projects || {}).map(([id, value]) => ({ id, ...value })),
     milestones: await collectMilestones(registry),
-    docs: await collectDocs(registry),
+    docs,
     tasks,
     assets: Object.entries(registry.assets || {}).map(([id, value]) => ({ id, ...value })),
     people: registry.people || [],
@@ -395,8 +442,12 @@ async function compileData() {
     reviews,
     latest_attempts: latestAttempts(events),
     review_queue: buildReviewQueue(tasks, events, reviews),
+    blocked_tasks: blockedTasks(tasks),
+    stale_work: staleWork(tasks, events),
+    feature_proposals: featureProposals(docs),
     validation: { issues }
   };
+  data.project_status = projectStatusSummary(data);
   data.search_index = buildSearchIndex(data);
   return data;
 }
@@ -444,6 +495,17 @@ function createDocPayload(registry, payload) {
   const rel = `projects/${projectFolder(payload.project_id, project.name)}/docs/${docFolder(docType)}/${docId}-${slugify(payload.title || "document")}.md`;
   const text = `---\nid: ${docId}\nproject_id: ${payload.project_id}\ntype: ${docType}\nowner: ${payload.owner || ""}\nstatus: draft\n---\n\n# ${docId} - ${payload.title || "Document"}\n\n${docBodyTemplate(docType)}\n`;
   registry.docs[docId] = { project_id: payload.project_id, doc_type: docType, title: payload.title || "", owner: payload.owner || "", path: rel, status: "draft" };
+  return { docId, rel, text };
+}
+
+function createFeatureProposalPayload(registry, payload) {
+  const project = registry.projects?.[payload.project_id];
+  if (!project) throw new Error(`missing project ${payload.project_id}`);
+  const docId = allocateId(registry, "doc");
+  const rel = `projects/${projectFolder(payload.project_id, project.name)}/docs/proposals/${docId}-${slugify(payload.title || "feature-proposal")}.md`;
+  const body = `## Problem\n\n${payload.problem || "TBD"}\n\n## Player/User Value\n\n${payload.value || "TBD"}\n\n## Proposed Scope\n\n${payload.scope || "TBD"}\n\n## Non-Goals\n\n${payload.non_goals || "TBD"}\n\n## Risks\n\n${payload.risks || "TBD"}\n\n## Task Breakdown\n\n${payload.task_breakdown || "TBD"}\n\n## Decision Needed\n\n${payload.decision_needed || "Approve, reject, or defer this feature proposal."}\n`;
+  const text = `---\nid: ${docId}\nproject_id: ${payload.project_id}\ntype: feature-proposal\nowner: ${payload.owner || ""}\nstatus: review\n---\n\n# ${docId} - ${payload.title || "Feature Proposal"}\n\n${body}`;
+  registry.docs[docId] = { project_id: payload.project_id, doc_type: "feature-proposal", title: payload.title || "", owner: payload.owner || "", path: rel, status: "review" };
   return { docId, rel, text };
 }
 
@@ -674,6 +736,12 @@ async function proposalActions(payload) {
     const registry = await loadRegistry();
     const { docId, rel, text } = createDocPayload(registry, payload);
     const title = `Create ${docId}: ${payload.title || ""}`;
+    return { title, message: title, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "create", file_path: rel, content: text }] };
+  }
+  if (payload.type === "propose_feature") {
+    const registry = await loadRegistry();
+    const { docId, rel, text } = createFeatureProposalPayload(registry, payload);
+    const title = `Propose feature ${docId}: ${payload.title || ""}`;
     return { title, message: title, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "create", file_path: rel, content: text }] };
   }
   if (payload.type === "update_task") {

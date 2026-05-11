@@ -27,6 +27,7 @@ When the skill initializes a team workspace, it creates a separate project-manag
 
 ```text
 registry.yaml
+START_HERE_FOR_AGENTS.md
 projects/
   PROJ1-sample-game/
     README.md
@@ -60,7 +61,10 @@ python scripts/git_pm.py init --repo ".\project-hub" --name "Project Hub" --owne
 python scripts/git_pm.py validate --repo ".\project-hub"
 python scripts/git_pm.py audit-docs --repo ".\project-hub"
 python scripts/git_pm.py compile --repo ".\project-hub"
+python scripts/git_pm.py project-status --repo ".\project-hub" --project-id PROJ1
+python scripts/git_pm.py my-tasks --repo ".\project-hub" --user "Your Name"
 python scripts/git_pm.py create-milestone --repo ".\project-hub" --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Your Name"
+python scripts/git_pm.py propose-feature --repo ".\project-hub" --project-id PROJ1 --title "FTUE Data Tracking" --owner "Your Name"
 python scripts/git_pm.py website --repo ".\project-hub" --port 8787
 ```
 
@@ -128,7 +132,9 @@ python scripts/node_website_smoke_test.py
 - This operating model does not use Git Issues for task tracking; task state, events, reviews, and attempts live in Git files.
 - IDs are allocated by the controller or website backend, then validated before merge.
 - Roadmaps and milestones provide planning structure above tasks.
+- Owners propose new features with `propose-feature`; accepted proposals are decomposed into milestones, tasks, docs, and linked implementation repo work.
 - New tasks live in task folders with `task.yaml`, `notes.md`, `outputs.md`, and `attachments/`.
+- Agents can answer day-to-day questions with `my-tasks`, `project-status`, `review-queue`, `blocked-tasks`, and `stale-work`.
 - Day-to-day task updates use `update-task`, `add-event`, `record-attempt`, `record-verification-failed`, `withdraw-output`, `supersede-output`, `cancel-review`, `submit-output`, `review-task`, and `register-asset`.
 - `submit-output` moves work to `In Review`; `Done` and `Verified` require output plus an approved review record.
 - Every attempt to complete work should leave an append-only event or review record, even when the output is rejected, withdrawn, superseded, or review is cancelled.
@@ -136,4 +142,4 @@ python scripts/node_website_smoke_test.py
 - Live docs should be updated when terminology or scope changes; completed tasks and finalized records should stay historical.
 - Large videos, builds, source art, and captures should live in Git LFS, releases/packages, object storage, or implementation repos, with references tracked in asset manifests.
 
-See `references/operating-model.md`, `references/architecture.md`, `references/schemas.md`, `references/wiki-guidelines.md`, `references/day-to-day-workflows.md`, `references/attempt-workflows.md`, `references/team-cadence.md`, and `references/website.md` for the detailed model.
+See `references/operating-model.md`, `references/architecture.md`, `references/schemas.md`, `references/wiki-guidelines.md`, `references/day-to-day-workflows.md`, `references/agent-entrypoints.md`, `references/attempt-workflows.md`, `references/team-cadence.md`, and `references/website.md` for the detailed model.

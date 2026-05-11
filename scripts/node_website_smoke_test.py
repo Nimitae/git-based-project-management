@@ -101,6 +101,8 @@ def main() -> int:
             raise RuntimeError("Node website returned no tasks")
         if not data.get("search_index"):
             raise RuntimeError("Node website returned no search index")
+        if "blocked_tasks" not in data or "stale_work" not in data or "feature_proposals" not in data:
+            raise RuntimeError("Node website did not return project health collections")
         proposal = http_json(
             base + "/api/proposals",
             {
@@ -142,6 +144,19 @@ def main() -> int:
                 "title": "Node Smoke Meeting Notes",
                 "owner": "Terence",
                 "doc_type": "meeting-notes",
+            },
+        )
+        feature_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "propose_feature",
+                "project_id": "PROJ1",
+                "title": "Node smoke feature",
+                "owner": "Terence",
+                "problem": "Need a feature proposal path",
+                "value": "Owners can propose future work",
+                "scope": "Proposal document and task breakdown",
+                "task_breakdown": "Create implementation task after approval",
             },
         )
         attempt_proposal = http_json(
@@ -200,6 +215,8 @@ def main() -> int:
             raise RuntimeError(f"asset proposal directory was not created: {asset_proposal}")
         if not Path(doc_proposal.get("proposal_dir", "")).exists():
             raise RuntimeError(f"doc proposal directory was not created: {doc_proposal}")
+        if not Path(feature_proposal.get("proposal_dir", "")).exists():
+            raise RuntimeError(f"feature proposal directory was not created: {feature_proposal}")
         for name, row in {
             "attempt": attempt_proposal,
             "failed": failed_proposal,

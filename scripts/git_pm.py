@@ -39,6 +39,7 @@ ATTEMPT_EVENT_TYPES = {
 DOC_TYPES = {
     "proposal",
     "brief",
+    "feature-proposal",
     "feature-brief",
     "game-design",
     "technical-spec",
@@ -75,6 +76,7 @@ HISTORICAL_TASK_STATUSES = {"Done", "Verified", "Iceboxed"}
 DOC_SECTION_REQUIREMENTS = {
     "proposal": ["Problem", "Proposed Direction", "Risks", "Decision Needed"],
     "brief": ["Goal", "Audience", "Scope", "Success Criteria"],
+    "feature-proposal": ["Problem", "Player/User Value", "Proposed Scope", "Non-Goals", "Risks", "Task Breakdown", "Decision Needed"],
     "feature-brief": ["Player/User Value", "Scope", "Dependencies", "Success Metrics"],
     "game-design": ["Player Fantasy", "Core Loop", "Systems", "UX Notes", "Tuning Questions"],
     "technical-spec": ["Goal", "Architecture", "Interfaces", "Test Plan", "Rollout"],
@@ -259,7 +261,7 @@ def project_folder(project_id: str, name: str) -> str:
 
 
 def doc_folder(doc_type: str) -> str:
-    if doc_type in {"proposal", "brief"}:
+    if doc_type in {"proposal", "brief", "feature-proposal"}:
         return "proposals"
     if doc_type in {"game-design", "feature-brief"}:
         return "design"
@@ -286,6 +288,15 @@ def doc_body_template(doc_type: str) -> str:
             "Proposed Direction": "What should change, and what alternatives were considered?",
             "Risks": "List product, technical, schedule, art, or dependency risks.",
             "Decision Needed": "State the specific approval or decision needed.",
+        },
+        "feature-proposal": {
+            "Problem": "What user, player, product, or operational problem should this feature solve?",
+            "Player/User Value": "State the intended outcome and why this should be prioritized now.",
+            "Proposed Scope": "List included behavior, systems, screens, assets, services, and docs.",
+            "Non-Goals": "List tempting work that is intentionally out of scope.",
+            "Risks": "List product, technical, design, art, schedule, data, or dependency risks.",
+            "Task Breakdown": "List proposed tasks, owners, expected outputs, and linked repos if known.",
+            "Decision Needed": "State approve/reject/defer criteria and who decides.",
         },
         "feature-brief": {
             "Player/User Value": "State the user outcome and why it matters now.",
@@ -535,6 +546,55 @@ def make_doc(doc_id: str, project: dict, doc_type: str, title: str, owner: str) 
     return rel, text, ref
 
 
+def make_feature_proposal_doc(doc_id: str, project: dict, payload: dict) -> tuple[str, str, dict]:
+    title = payload.get("title", "")
+    owner = payload.get("owner", "")
+    folder = project_folder(project["id"], project["name"])
+    rel = f"projects/{folder}/docs/proposals/{doc_id}-{slugify(title)}.md"
+    body = f"""
+## Problem
+
+{payload.get("problem") or "TBD"}
+
+## Player/User Value
+
+{payload.get("value") or "TBD"}
+
+## Proposed Scope
+
+{payload.get("scope") or "TBD"}
+
+## Non-Goals
+
+{payload.get("non_goals") or "TBD"}
+
+## Risks
+
+{payload.get("risks") or "TBD"}
+
+## Task Breakdown
+
+{payload.get("task_breakdown") or "TBD"}
+
+## Decision Needed
+
+{payload.get("decision_needed") or "Approve, reject, or defer this feature proposal."}
+"""
+    text = markdown_doc(
+        {
+            "id": doc_id,
+            "project_id": project["id"],
+            "type": "feature-proposal",
+            "owner": owner,
+            "status": "review",
+        },
+        f"{doc_id} - {title}",
+        body,
+    )
+    ref = {"project_id": project["id"], "doc_type": "feature-proposal", "title": title, "owner": owner, "path": rel, "status": "review"}
+    return rel, text, ref
+
+
 def ensure_base_registry(name: str, owner: str, provider: str, github_repo: str, gitlab_url: str, gitlab_project: str) -> dict:
     project = make_project_record("PROJ1", name, owner, "game", "Active")
     task_path, task, task_ref = make_task("TASK1", "PROJ1", name, "Confirm collaboration setup", owner, "PM", "Setup Confirmation")
@@ -616,6 +676,54 @@ Add implementation repositories in `project.yaml` so collaborators and agents kn
 """
 
 
+def start_here_for_agents_doc() -> str:
+    return """# Start Here For Agents
+
+This repository is the source of truth for project intent, task state, documents, reviews, attempts, decisions, and links to implementation repos.
+
+## Before Any Work
+
+1. Pull latest Git state.
+2. Run or inspect `git_pm.py project-status --repo .`.
+3. Read `registry.yaml`, project `README.md`, roadmap, active milestones, relevant task folders, events, reviews, and linked live docs.
+4. Inspect implementation repos only after the management repo identifies the relevant repo or task.
+5. Propose durable changes through PRs/MRs or website proposals.
+
+## Common User Requests
+
+If a user asks what they need to do today:
+
+- Run `git_pm.py my-tasks --repo . --user "<name>"`.
+- Read the listed task folders and linked docs.
+- Report active work, blockers, review items, and next actions.
+
+If an owner proposes a new feature:
+
+- Run `git_pm.py propose-feature --repo . --project-id PROJ# --title "<feature>" --owner "<name>"`.
+- Fill the feature proposal with problem, value, scope, non-goals, risks, task breakdown, and decision needed.
+- Create follow-up tasks only after the proposal is accepted or explicitly approved.
+
+If a manager asks for project health:
+
+- Run `git_pm.py project-status --repo . --project-id PROJ#`.
+- Run `git_pm.py blocked-tasks --repo .`, `git_pm.py review-queue --repo .`, and `git_pm.py stale-work --repo .`.
+- Summarize blockers, stale review, failed verification, missing outputs, doc drift, and decision needs.
+
+If a reviewer asks what needs review:
+
+- Run `git_pm.py review-queue --repo .`.
+- For each item, verify objective output access before approving.
+- Use `record-verification-failed`, `review-task --decision changes_requested`, or `review-task --decision approved`.
+
+## Rules
+
+- Do not use Git Issues for task state.
+- Do not mutate generated website data as source of truth.
+- Do not rewrite completed tasks, finalized docs, append-only events, or reviews.
+- Do not mark work `Done` or `Verified` without output, acceptance criteria, and approved review.
+"""
+
+
 def write_initial_files(repo: Path, registry: dict) -> None:
     seed = registry.pop("_seed")
     project = registry["projects"]["PROJ1"]
@@ -645,6 +753,7 @@ Agents and humans should make durable changes through pull requests or merge req
 Task state, events, reviews, and output attempts live in Git files. This workflow does not use Git Issues for task tracking.
 """,
     )
+    write_text(repo / "START_HERE_FOR_AGENTS.md", start_here_for_agents_doc())
     write_text(repo / project["path"], dump(project))
     write_text(
         repo / project["readme"],
@@ -694,6 +803,7 @@ def template_files() -> dict[str, str]:
     files["templates/policies/role-permissions.yaml"] = dump(default_role_permissions_policy())
     files["templates/policies/storage-policy.yaml"] = dump(default_storage_policy())
     files["templates/asset.yaml"] = dump({"title": "Asset title", "type": "mockup", "storage": "external-link", "path": "", "source_url": "", "used_by": ["PROJ#"], "owner": "Owner"})
+    files["templates/start-here-for-agents.md"] = start_here_for_agents_doc()
     files["templates/verification-failed.md"] = "# Verification Failed\n\n## Attempt\n\n- Task: `TASK#`\n- Output: \n- Reviewer: \n\n## Objective Check That Failed\n\nDescribe the exact check, command, asset access, build, contract, or evidence that could not be verified.\n\n## Expected Next Step\n\nKeep the task out of `Done`/`Verified`. Record `record-verification-failed`, then revise, supersede, withdraw, or cancel the review.\n"
     files["templates/output-withdrawn.md"] = "# Output Withdrawn\n\n## Attempt\n\n- Task: `TASK#`\n- Previous output: \n- Actor: \n\n## Reason\n\nExplain why the output is no longer current, no longer needed, or cannot be reviewed.\n\n## Follow-up\n\nState whether the task returns to `In Progress`, gets superseded by a new output, or is replaced by another task.\n"
     files["templates/review-cancelled.md"] = "# Review Cancelled\n\n## Review\n\n- Task: `TASK#`\n- Reviewer/actor: \n- Output under review: \n\n## Reason\n\nExplain why review stopped before an approval or changes-requested decision.\n\n## Follow-up\n\nState who owns the next action and whether the output should be withdrawn, superseded, or resubmitted.\n"
@@ -708,6 +818,7 @@ def default_output_policy() -> dict:
         "output_types": {
             "Setup Confirmation": {"matches": ["Setup Confirmation"], "manual_checks": ["Repository validates", "Website loads locally"]},
             "Proposal": {"matches": ["Proposal", "Pitch"], "manual_checks": ["Problem is clear", "Decision needed is explicit"]},
+            "Feature Proposal": {"matches": ["Feature Proposal"], "manual_checks": ["Value is clear", "Scope and non-goals are explicit", "Task breakdown is proposed"]},
             "Game Design": {"matches": ["Game Design", "Design Doc"], "manual_checks": ["Player-facing behavior is clear", "Open tuning questions are listed"]},
             "Technical Spec": {"matches": ["Technical Spec", "Architecture Doc"], "manual_checks": ["Interfaces and test plan are clear"]},
             "Playtest Report": {"matches": ["Playtest Report"], "manual_checks": ["Build and participants are stated", "Findings include evidence"]},
@@ -1205,6 +1316,90 @@ def build_review_queue(tasks: list[dict], events: list[dict], reviews: list[dict
     return rows
 
 
+def open_tasks(tasks: list[dict]) -> list[dict]:
+    return [task for task in tasks if task.get("status") not in HISTORICAL_TASK_STATUSES]
+
+
+def assigned_tasks(tasks: list[dict], user: str, include_done: bool = False) -> list[dict]:
+    needle = user.strip().lower()
+    rows = []
+    for task in tasks:
+        assignee = str(task.get("assigned_to", "")).strip().lower()
+        reviewer = str(task.get("reviewer", "")).strip().lower()
+        if needle and needle not in {assignee, reviewer}:
+            continue
+        if not include_done and task.get("status") in HISTORICAL_TASK_STATUSES:
+            continue
+        rows.append(task)
+    return rows
+
+
+def blocked_tasks(tasks: list[dict]) -> list[dict]:
+    return [task for task in tasks if task.get("status") == "Blocked" or task.get("blocker")]
+
+
+def stale_work(tasks: list[dict], events: list[dict], days: int = 3) -> list[dict]:
+    latest_by_task: dict[str, dict] = {}
+    for event in events:
+        if event.get("task_id"):
+            latest_by_task[event["task_id"]] = event
+    now = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
+    rows = []
+    for task in open_tasks(tasks):
+        latest = latest_by_task.get(task.get("id", ""), {})
+        created_at = parse_iso(latest.get("created_at", ""))
+        age_days = None
+        if created_at:
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=dt.timezone(dt.timedelta(hours=8)))
+            age_days = max(0, (now - created_at).days)
+        if age_days is None or age_days >= days:
+            rows.append({**task, "latest_event": latest, "age_days": age_days})
+    return rows
+
+
+def feature_proposals(docs: list[dict]) -> list[dict]:
+    return [doc for doc in docs if doc.get("type") in {"feature-proposal", "feature-brief"} and doc.get("status") in LIVE_DOC_STATUSES]
+
+
+def project_status_summary(data: dict, project_id: str = "") -> dict:
+    projects = data.get("projects", [])
+    selected = [project for project in projects if not project_id or project.get("id") == project_id]
+    if project_id and not selected:
+        return {
+            "projects": [],
+            "counts": {"projects": 0, "docs": 0, "tasks": 0, "open_tasks": 0, "blocked_tasks": 0, "review_queue": 0, "stale_work": 0, "feature_proposals": 0, "validation_issues": len(data.get("validation", {}).get("issues", []))},
+            "blocked_tasks": [],
+            "review_queue": [],
+            "stale_work": [],
+            "feature_proposals": [],
+        }
+    selected_ids = {project.get("id") for project in selected}
+    tasks = [task for task in data.get("tasks", []) if not selected_ids or task.get("project_id") in selected_ids]
+    docs = [doc for doc in data.get("docs", []) if not selected_ids or doc.get("project_id") in selected_ids]
+    review_queue = [row for row in data.get("review_queue", []) if any(task.get("id") == row.get("task_id") for task in tasks)]
+    blocked = blocked_tasks(tasks)
+    stale = stale_work(tasks, data.get("events", []))
+    return {
+        "projects": selected,
+        "counts": {
+            "projects": len(selected),
+            "docs": len(docs),
+            "tasks": len(tasks),
+            "open_tasks": len(open_tasks(tasks)),
+            "blocked_tasks": len(blocked),
+            "review_queue": len(review_queue),
+            "stale_work": len(stale),
+            "feature_proposals": len(feature_proposals(docs)),
+            "validation_issues": len(data.get("validation", {}).get("issues", [])),
+        },
+        "blocked_tasks": blocked,
+        "review_queue": review_queue,
+        "stale_work": stale,
+        "feature_proposals": feature_proposals(docs),
+    }
+
+
 def build_search_index(data: dict) -> list[dict]:
     rows = []
     for project in data.get("projects", []):
@@ -1230,6 +1425,7 @@ def compile_data(repo: Path) -> dict:
     events = read_jsonl(repo / "events/task-events.jsonl")
     reviews = read_jsonl(repo / "reviews/task-reviews.jsonl")
     tasks = collect_tasks(repo, registry)
+    docs = collect_docs(repo, registry)
     data = {
         "schema_version": registry.get("schema_version", 2),
         "repo_name": registry.get("name", repo.name),
@@ -1242,7 +1438,7 @@ def compile_data(repo: Path) -> dict:
         "generated_at": now_iso(),
         "projects": [{"id": key, **value} for key, value in registry.get("projects", {}).items()],
         "milestones": collect_milestones(repo, registry),
-        "docs": collect_docs(repo, registry),
+        "docs": docs,
         "tasks": tasks,
         "assets": [{"id": key, **value} for key, value in registry.get("assets", {}).items()],
         "people": registry.get("people", []),
@@ -1250,8 +1446,12 @@ def compile_data(repo: Path) -> dict:
         "reviews": reviews,
         "latest_attempts": latest_attempts(events),
         "review_queue": build_review_queue(tasks, events, reviews),
+        "blocked_tasks": blocked_tasks(tasks),
+        "stale_work": stale_work(tasks, events),
+        "feature_proposals": feature_proposals(docs),
         "validation": {"issues": issues},
     }
+    data["project_status"] = project_status_summary(data)
     data["search_index"] = build_search_index(data)
     return data
 
@@ -1267,9 +1467,84 @@ def cmd_compile(args: argparse.Namespace) -> int:
     return 1 if any(item["level"] == "error" for item in data["validation"]["issues"]) else 0
 
 
+def print_task_lines(tasks: list[dict]) -> None:
+    if not tasks:
+        print("No matching tasks.")
+        return
+    for task in tasks:
+        blocker = f" blocker={task.get('blocker')}" if task.get("blocker") else ""
+        output = f" output={task.get('output')}" if task.get("output") else ""
+        print(f"{task.get('id')} [{task.get('status')}] {task.get('title')} owner={task.get('assigned_to') or 'Unassigned'} expected={task.get('expected_output') or 'TBD'} path={task.get('path')}{blocker}{output}")
+
+
+def cmd_my_tasks(args: argparse.Namespace) -> int:
+    data = compile_data(repo_arg(args.repo))
+    rows = assigned_tasks(data["tasks"], args.user, args.include_done)
+    if args.json:
+        print(json.dumps({"user": args.user, "tasks": rows}, indent=2))
+    else:
+        print_task_lines(rows)
+    return 0
+
+
+def cmd_project_status(args: argparse.Namespace) -> int:
+    data = compile_data(repo_arg(args.repo))
+    summary = project_status_summary(data, args.project_id)
+    if args.json:
+        print(json.dumps(summary, indent=2))
+    else:
+        print(json.dumps(summary["counts"], indent=2))
+        if summary["blocked_tasks"]:
+            print("\nBlocked:")
+            print_task_lines(summary["blocked_tasks"])
+        if summary["review_queue"]:
+            print("\nReview Queue:")
+            for row in summary["review_queue"]:
+                print(f"{row.get('task_id')} reasons={','.join(row.get('reasons', []))} owner={row.get('assigned_to') or 'Unassigned'} output={row.get('output') or 'None'}")
+        if summary["feature_proposals"]:
+            print("\nFeature Proposals:")
+            for doc in summary["feature_proposals"]:
+                print(f"{doc.get('id')} [{doc.get('status')}] {doc.get('title')} owner={doc.get('owner')} path={doc.get('path')}")
+    return 0
+
+
+def cmd_review_queue(args: argparse.Namespace) -> int:
+    data = compile_data(repo_arg(args.repo))
+    rows = data.get("review_queue", [])
+    if args.json:
+        print(json.dumps({"review_queue": rows}, indent=2))
+    else:
+        if not rows:
+            print("Review queue is empty.")
+        for row in rows:
+            print(f"{row.get('task_id')} reasons={','.join(row.get('reasons', []))} status={row.get('status')} owner={row.get('assigned_to') or 'Unassigned'} reviewer={row.get('reviewer') or 'Unassigned'} output={row.get('output') or 'None'}")
+    return 0
+
+
+def cmd_blocked_tasks(args: argparse.Namespace) -> int:
+    data = compile_data(repo_arg(args.repo))
+    rows = blocked_tasks(data["tasks"])
+    if args.json:
+        print(json.dumps({"blocked_tasks": rows}, indent=2))
+    else:
+        print_task_lines(rows)
+    return 0
+
+
+def cmd_stale_work(args: argparse.Namespace) -> int:
+    data = compile_data(repo_arg(args.repo))
+    rows = stale_work(data["tasks"], data["events"], args.days)
+    if args.json:
+        print(json.dumps({"days": args.days, "stale_work": rows}, indent=2))
+    else:
+        print_task_lines(rows)
+    return 0
+
+
 def live_document_paths(registry: dict) -> list[str]:
     paths = [
         "README.md",
+        "START_HERE_FOR_AGENTS.md",
         "registry.yaml",
         "policies/wiki-guidelines.md",
         "policies/output-requirements.yaml",
@@ -1433,6 +1708,39 @@ def cmd_create_doc(args: argparse.Namespace) -> int:
     write_text(repo / rel, text)
     save_registry(repo, registry)
     print(f"Created {doc_id} at {rel}")
+    return 0
+
+
+def propose_feature_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    project = registry.get("projects", {}).get(payload.get("project_id", ""))
+    if not project:
+        raise GitPMError(f"missing project {payload.get('project_id')}")
+    doc_id = allocate_id(registry, "doc")
+    rel, text, ref = make_feature_proposal_doc(doc_id, project, payload)
+    registry.setdefault("docs", {})[doc_id] = ref
+    title = f"Propose feature {doc_id}: {payload.get('title', '')}"
+    return title, title, [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "create", "file_path": rel, "content": text},
+    ]
+
+
+def cmd_propose_feature(args: argparse.Namespace) -> int:
+    payload = {
+        "type": "propose_feature",
+        "project_id": args.project_id,
+        "title": args.title,
+        "owner": args.owner,
+        "problem": args.problem,
+        "value": args.value,
+        "scope": args.scope,
+        "non_goals": args.non_goals,
+        "risks": args.risks,
+        "task_breakdown": args.task_breakdown,
+        "decision_needed": args.decision_needed,
+    }
+    result = apply_payload(repo_arg(args.repo), payload)
+    print(json.dumps(result, indent=2))
     return 0
 
 
@@ -2028,6 +2336,9 @@ def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
             {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
             {"action": "create", "file_path": rel, "content": text},
         ]
+    if change_type == "propose_feature":
+        registry = load_registry(repo)
+        return propose_feature_actions(repo, registry, payload)
     if change_type == "update_task":
         registry = load_registry(repo)
         return update_task_actions(repo, registry, payload)
@@ -2361,6 +2672,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_compile)
 
+    p = sub.add_parser("my-tasks")
+    add_common_repo(p)
+    p.add_argument("--user", required=True)
+    p.add_argument("--include-done", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_my_tasks)
+
+    p = sub.add_parser("project-status")
+    add_common_repo(p)
+    p.add_argument("--project-id", default="")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_project_status)
+
+    p = sub.add_parser("review-queue")
+    add_common_repo(p)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_review_queue)
+
+    p = sub.add_parser("blocked-tasks")
+    add_common_repo(p)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_blocked_tasks)
+
+    p = sub.add_parser("stale-work")
+    add_common_repo(p)
+    p.add_argument("--days", type=int, default=3)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_stale_work)
+
     p = sub.add_parser("audit-docs")
     add_common_repo(p)
     p.add_argument("--json", action="store_true")
@@ -2405,6 +2745,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--owner", required=True)
     p.add_argument("--doc-type", default="proposal")
     p.set_defaults(func=cmd_create_doc)
+
+    p = sub.add_parser("propose-feature")
+    add_common_repo(p)
+    p.add_argument("--project-id", required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--owner", required=True)
+    p.add_argument("--problem", default="")
+    p.add_argument("--value", default="")
+    p.add_argument("--scope", default="")
+    p.add_argument("--non-goals", default="")
+    p.add_argument("--risks", default="")
+    p.add_argument("--task-breakdown", default="")
+    p.add_argument("--decision-needed", default="")
+    p.set_defaults(func=cmd_propose_feature)
 
     p = sub.add_parser("update-task")
     add_common_repo(p)

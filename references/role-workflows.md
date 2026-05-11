@@ -7,6 +7,7 @@ Allowed:
 - Initialize the management repo.
 - Configure provider permissions, protected branches, CI, and website deployment.
 - Change schemas, templates, policies, and role rules.
+- Propose and approve feature proposals before execution tasks are created.
 - Merge structural pull requests or merge requests after validation passes.
 - Reject PRs/MRs that try to mark work complete when objective output verification fails.
 
@@ -15,6 +16,7 @@ Allowed:
 Allowed:
 
 - Create projects, tasks, and documents.
+- Convert accepted feature proposals into milestones, tasks, docs, and repo-linked work.
 - Create roadmaps and milestones.
 - Edit project state, planning docs, repo links, task definitions, dependencies, asset manifests, and live notes through PRs/MRs.
 - Review validation and document-audit reports, then merge approved work if permitted.

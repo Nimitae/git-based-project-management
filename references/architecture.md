@@ -19,6 +19,7 @@ Git is canonical. The website, generated dashboards, PR/MR views, and exported v
 - Project: a game, software product, tool, website, service, campaign, research stream, or internal process.
 - Roadmap: Now/Next/Later planning state for a project.
 - Milestone: a release, sprint, vertical slice, or major deliverable with goals and exit criteria.
+- Feature proposal: a reviewable proposal for new work before it is decomposed into milestones and execution tasks.
 - Document: a durable Markdown record such as a proposal, game design, technical spec, playtest report, QA report, asset brief, video brief, release plan, postmortem, or decision.
 - Task: one owned unit of work with expected output and acceptance criteria.
 - Asset: a registered image, video, build, source art file, design file, audio clip, deck, dataset, or external artifact.
@@ -95,6 +96,7 @@ Use these types unless a team extends the schema:
 
 - Durable changes go through pull requests or merge requests.
 - The website creates proposals; it does not write directly to the default branch.
+- New feature ideas should start as `feature-proposal` docs, then become milestones/tasks after approval.
 - Task status, output attempts, and quick updates use controller commands, website proposals, and append-only event/review files.
 - Submitted output moves a task to `In Review`. `Done` and `Verified` require output plus an approved review record.
 - If output cannot be objectively verified, reject the PR/MR and record a `verification_failed` attempt event/review so the attempted completion is visible in Git history.

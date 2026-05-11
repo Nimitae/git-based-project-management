@@ -59,6 +59,8 @@ def main() -> int:
     server = None
     try:
         run(["init", "--repo", str(repo), "--name", "Demo Project Hub", "--owner", "Terence"])
+        if not (repo / "START_HERE_FOR_AGENTS.md").exists():
+            raise RuntimeError("START_HERE_FOR_AGENTS.md was not created")
         run(["update-task", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--status", "In Progress", "--user-update", "Smoke test update"])
         run(["submit-output", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--output", "https://example.com/output", "--message", "Smoke output"])
         in_review = json.loads((repo / "projects" / "PROJ1-demo-project-hub" / "tasks" / "TASK1" / "task.yaml").read_text(encoding="utf-8"))
@@ -69,6 +71,7 @@ def main() -> int:
         if "historical" not in (historical.stderr + historical.stdout).lower():
             raise RuntimeError(f"historical update guard did not explain the failure:\n{historical.stderr}")
         run(["create-milestone", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke milestone", "--owner", "Terence"])
+        run(["propose-feature", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke feature", "--owner", "Terence", "--problem", "Need a smoke-tested proposal flow", "--value", "Owners can propose features", "--scope", "Docs and task breakdown", "--task-breakdown", "Create follow-up task after approval"])
         run(["create-task", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke editable task", "--assigned-to", "Terence", "--role", "PM", "--expected-output", "Setup Confirmation"])
         if not (repo / "projects" / "PROJ1-demo-project-hub" / "tasks" / "TASK2" / "notes.md").exists():
             raise RuntimeError("task folder notes.md was not created")
@@ -86,6 +89,15 @@ def main() -> int:
         if errors:
             raise RuntimeError(f"validation errors: {errors}")
         run(["audit-docs", "--repo", str(repo)])
+        my_tasks = json.loads(run(["my-tasks", "--repo", str(repo), "--user", "Terence", "--json"]).stdout)
+        if not my_tasks["tasks"]:
+            raise RuntimeError("my-tasks returned no rows for Terence")
+        project_status = json.loads(run(["project-status", "--repo", str(repo), "--project-id", "PROJ1", "--json"]).stdout)
+        if project_status["counts"]["feature_proposals"] < 1:
+            raise RuntimeError("project-status did not include the feature proposal")
+        run(["review-queue", "--repo", str(repo)])
+        run(["blocked-tasks", "--repo", str(repo)])
+        run(["stale-work", "--repo", str(repo), "--days", "0"])
         run(["compile", "--repo", str(repo)])
         if not (repo / ".project-hub" / "site-data" / "search-index.json").exists():
             raise RuntimeError("search index was not generated")
@@ -96,6 +108,8 @@ def main() -> int:
             raise RuntimeError(f"missing attempt events: {expected_attempt_types - attempt_types}")
         if not compiled.get("review_queue"):
             raise RuntimeError("review queue should include failed, withdrawn, or in-review attempts")
+        if not compiled.get("feature_proposals"):
+            raise RuntimeError("compiled data should include feature proposals")
         port = free_port()
         env = os.environ.copy()
         for key in ["GPM_LIVE_PROPOSALS", "GPM_PROVIDER", "GPM_GITHUB_REPO", "GPM_GITHUB_TOKEN", "GPM_GITLAB_PROJECT", "GPM_GITLAB_TOKEN"]:

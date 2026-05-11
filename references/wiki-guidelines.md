@@ -14,6 +14,8 @@ Required sections:
 - `Assets`: important builds, mockups, videos, art, models, captures, and external storage links.
 - `Operating Notes`: team conventions, meeting cadence, review expectations, and known constraints.
 
+The root `START_HERE_FOR_AGENTS.md` should tell agents how to answer daily task checks, owner feature proposals, manager health checks, and reviewer queue checks.
+
 ## Document Rules
 
 Use one Markdown file per durable document. Each document must have frontmatter:
@@ -47,6 +49,7 @@ Store non-task artifacts as documents or assets, not as loose files:
 - Retrospectives: `retro-notes` in `docs/notes/`.
 - Durable decisions: `decision` in `docs/decisions/`.
 - Designs/specs: `game-design`, `feature-brief` in `docs/design/`.
+- Feature proposals: `feature-proposal` in `docs/proposals/`.
 - Engineering specs: `technical-spec`, `frontend-spec`, `backend-spec`, `telemetry-spec`, `api-contract` in `docs/engineering/`.
 - Reports: `playtest-plan`, `playtest-session`, `playtest-report`, `qa-report`, `qa-bug-report`, `research-report` in `docs/reports/`.
 - Asset/mockup briefs and handoffs: `asset-brief`, `3d-asset-brief`, `art-handoff`, `3d-model-handoff`, `video-brief`, `mockup-review` in `docs/production/`.

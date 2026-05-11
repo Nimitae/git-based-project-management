@@ -8,6 +8,7 @@ Daily read path:
 
 ```powershell
 git pull
+git_pm.py project-status --repo . --project-id PROJ1
 git_pm.py compile --repo .
 git_pm.py validate --repo .
 git_pm.py audit-docs --repo .
@@ -26,6 +27,22 @@ git_pm.py add-event --repo . --task-id TASK8 --actor "Maya" --event-type "planni
 ```
 
 PMs should review validation warnings, audit warnings, stale blockers, missing outputs, and tasks waiting for review. Meeting notes, weekly updates, project notes, risk logs, and retrospectives belong in `docs/notes/`; durable decisions belong in `docs/decisions/`.
+
+## Owner Feature Proposal
+
+When an owner wants to add a feature, start with a proposal instead of immediate task churn:
+
+```powershell
+git_pm.py propose-feature --repo . --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya" --problem "Tutorial drop-off is not measurable." --value "Team can diagnose onboarding friction." --scope "Client events, backend ingest, validation dashboard." --non-goals "Full analytics warehouse redesign." --risks "Schema churn; QA visibility; privacy review." --task-breakdown "Design event spec; implement client events; add ingest endpoint; verify staging data."
+```
+
+After approval, create the milestone and execution tasks:
+
+```powershell
+git_pm.py create-milestone --repo . --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya"
+git_pm.py create-task --repo . --project-id PROJ1 --title "Implement FTUE client events" --assigned-to "Paul" --role "Programmer" --expected-output "Pull Request"
+git_pm.py create-task --repo . --project-id PROJ1 --title "Add FTUE telemetry ingestion" --assigned-to "Bao" --role "Backend Engineer" --expected-output "Pull Request"
+```
 
 ## Game Designer
 

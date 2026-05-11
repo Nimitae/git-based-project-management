@@ -17,6 +17,8 @@ It must:
 The bundled static UI supports:
 
 - Project/document/task dashboard.
+- My Work view for assignee/reviewer task lookup.
+- Project Health view for blocked tasks, stale work, and active feature proposals.
 - Review queue for work in review, failed verification, withdrawn outputs, cancelled reviews, and stale review items.
 - Search across docs/tasks/assets/owners/status.
 - Task table with status and expected output.
@@ -24,6 +26,7 @@ The bundled static UI supports:
 - Document rows include file hashes so raw edit proposals can carry a base hash.
 - Assets panel with mockups, art, models, videos, builds, and external links.
 - Create-task proposal form.
+- Feature-proposal form.
 - Create-milestone proposal form.
 - Create-document proposal form.
 - Update-task, record-attempt, submit-output, record-verification-failed, withdraw-output, supersede-output, cancel-review, add-event, and review-task forms.
@@ -68,6 +71,19 @@ Proposal payload examples:
   "assigned_to": "Samantha",
   "role": "Design",
   "expected_output": "Concept Doc"
+}
+```
+
+```json
+{
+  "type": "propose_feature",
+  "project_id": "PROJ1",
+  "title": "FTUE Data Tracking",
+  "owner": "Maya",
+  "problem": "Tutorial drop-off is not measurable.",
+  "value": "Team can diagnose onboarding friction.",
+  "scope": "Client events, backend ingest, validation dashboard.",
+  "task_breakdown": "Design event spec; implement client events; add ingest endpoint."
 }
 ```
 

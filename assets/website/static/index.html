@@ -18,6 +18,8 @@
         </div>
         <nav class="nav-list" aria-label="Views">
           <button class="nav-item active" data-view="dashboard">Dashboard</button>
+          <button class="nav-item" data-view="mywork">My Work</button>
+          <button class="nav-item" data-view="health">Health</button>
           <button class="nav-item" data-view="tasks">Tasks</button>
           <button class="nav-item" data-view="docs">Docs</button>
           <button class="nav-item" data-view="assets">Assets</button>
@@ -86,6 +88,41 @@
                 <h2>Review Queue</h2>
               </div>
               <div id="reviewQueueList" class="event-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="myworkView">
+          <section class="panel wide">
+            <div class="panel-header">
+              <h2>My Work</h2>
+              <input id="myWorkOwner" type="search" placeholder="Type an owner or reviewer name" />
+            </div>
+            <div id="myWorkList" class="task-board"></div>
+          </section>
+        </section>
+
+        <section class="view" id="healthView">
+          <div class="content-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Blocked Tasks</h2>
+              </div>
+              <div id="blockedTaskList" class="event-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Stale Work</h2>
+              </div>
+              <div id="staleWorkList" class="event-list"></div>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-header">
+                <h2>Feature Proposals</h2>
+              </div>
+              <div id="featureProposalList" class="doc-list"></div>
             </section>
           </div>
         </section>
@@ -339,6 +376,7 @@
                 <label>Document Type
                   <select name="doc_type">
                     <option>proposal</option>
+                    <option>feature-proposal</option>
                     <option>feature-brief</option>
                     <option>game-design</option>
                     <option>technical-spec</option>
@@ -369,6 +407,25 @@
                   </select>
                 </label>
                 <button type="submit">Create PR/MR Proposal</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Feature Proposal PR/MR</h2>
+              </div>
+              <form id="featureProposalForm" class="form-stack">
+                <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
+                <label>Title <input name="title" placeholder="FTUE data tracking" required /></label>
+                <label>Owner <input name="owner" placeholder="Maya" required /></label>
+                <label>Problem <textarea name="problem" rows="3" placeholder="What problem should this solve?"></textarea></label>
+                <label>Player/User Value <textarea name="value" rows="3" placeholder="Why does this matter now?"></textarea></label>
+                <label>Proposed Scope <textarea name="scope" rows="3" placeholder="Included systems, screens, assets, services, docs"></textarea></label>
+                <label>Non-Goals <textarea name="non_goals" rows="3" placeholder="What is explicitly out of scope?"></textarea></label>
+                <label>Risks <textarea name="risks" rows="3" placeholder="Product, design, art, engineering, schedule, or data risks"></textarea></label>
+                <label>Task Breakdown <textarea name="task_breakdown" rows="4" placeholder="Proposed tasks, owners, expected outputs, target repos"></textarea></label>
+                <label>Decision Needed <textarea name="decision_needed" rows="3" placeholder="Who approves and by what criteria?"></textarea></label>
+                <button type="submit">Propose Feature</button>
               </form>
             </section>
 

@@ -5,6 +5,7 @@
 ```text
 registry.yaml
 README.md
+START_HERE_FOR_AGENTS.md
 projects/
   PROJ1-sample-game/
     README.md
@@ -251,6 +252,18 @@ Attempt-related event types are:
 
 Attempt events may include `output`, `previous_output`, `old_output`, `new_output`, `review_id`, or `decision` fields depending on the command.
 
+## Query Views
+
+`compile` and website `/api/data` expose derived views for day-to-day agents:
+
+- `review_queue`: tasks in review plus failed, withdrawn, cancelled, or stale review items.
+- `blocked_tasks`: tasks with `Blocked` status or blocker text.
+- `stale_work`: open tasks without recent event activity.
+- `feature_proposals`: active `feature-proposal` and `feature-brief` docs.
+- `project_status`: counts and health summary.
+
+These are generated from canonical files. Do not edit generated view data directly.
+
 ## Reviews
 
 Task reviews are append-only JSONL rows in `reviews/task-reviews.jsonl`:
@@ -277,6 +290,7 @@ Core document types:
 
 - `proposal`
 - `brief`
+- `feature-proposal`
 - `feature-brief`
 - `game-design`
 - `technical-spec`
