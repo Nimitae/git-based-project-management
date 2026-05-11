@@ -240,6 +240,38 @@ def markdown_title(text: str, fallback: str) -> str:
     return fallback
 
 
+def clean_markdown_line(line: str) -> str:
+    clean = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line or "")
+    clean = re.sub(r"`([^`]*)`", r"\1", clean)
+    clean = re.sub(r"<[^>]+>", "", clean)
+    clean = re.sub(r"^\s*[-*+]\s+", "", clean)
+    clean = re.sub(r"^\s*\d+\.\s+", "", clean)
+    clean = clean.replace("*", "").replace("_", "").replace("~", "")
+    clean = re.sub(r"\s*\|\s*", " / ", clean)
+    return re.sub(r"\s+", " ", clean).strip()
+
+
+def markdown_preview(text: str, title: str) -> str:
+    lines: list[str] = []
+    in_fence = False
+    for raw_line in (text or "").splitlines():
+        trimmed = raw_line.strip()
+        if trimmed.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence or not trimmed or trimmed.startswith("#"):
+            continue
+        if re.fullmatch(r"[\s|:-]+", trimmed):
+            continue
+        clean = clean_markdown_line(trimmed)
+        if not clean or clean.lower() == (title or "").lower():
+            continue
+        lines.append(clean)
+        if len(" ".join(lines)) >= 360:
+            break
+    return " ".join(lines)[:360]
+
+
 def markdown_doc(frontmatter: dict, title: str, body: str) -> str:
     fm = "\n".join(f"{key}: {value}" for key, value in frontmatter.items())
     return f"---\n{fm}\n---\n\n# {title}\n\n{body.strip()}\n"
@@ -1330,18 +1362,20 @@ def collect_docs(repo: Path, registry: dict) -> list[dict]:
         text = read_text(path)
         frontmatter, body = parse_frontmatter(text)
         headings = [line[3:].strip() for line in body.splitlines() if line.startswith("## ")]
-        plain = re.sub(r"\s+", " ", re.sub(r"`([^`]*)`", r"\1", body)).strip()
+        title = markdown_title(body, row.get("title", doc_id))
+        plain = re.sub(r"\s+", " ", " ".join(filter(None, (clean_markdown_line(line) for line in body.splitlines())))).strip()
         docs.append(
             {
                 "id": doc_id,
                 "project_id": row.get("project_id", ""),
                 "type": row.get("doc_type") or frontmatter.get("type", ""),
-                "title": markdown_title(body, row.get("title", doc_id)),
+                "title": title,
                 "path": row.get("path", ""),
                 "owner": row.get("owner", ""),
                 "status": row.get("status", ""),
                 "sha256": file_sha256(path),
                 "headings": headings,
+                "preview": markdown_preview(body, title),
                 "snippet": plain[:280],
                 "search_text": plain[:12000],
             }

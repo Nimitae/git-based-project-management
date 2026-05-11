@@ -128,6 +128,38 @@ function markdownTitle(text, fallback) {
   return fallback;
 }
 
+function cleanMarkdownLine(line) {
+  return String(line || "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/[*_~]/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/^\s*[-*+]\s+/, "")
+    .replace(/^\s*\d+\.\s+/, "")
+    .replace(/\s*\|\s*/g, " / ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function markdownPreview(text, title) {
+  const lines = [];
+  let inFence = false;
+  for (const rawLine of String(text || "").split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (trimmed.startsWith("```")) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence || !trimmed || trimmed.startsWith("#")) continue;
+    if (/^[\s|:-]+$/.test(trimmed)) continue;
+    const clean = cleanMarkdownLine(trimmed);
+    if (!clean || clean.toLowerCase() === String(title || "").toLowerCase()) continue;
+    lines.push(clean);
+    if (lines.join(" ").length >= 360) break;
+  }
+  return lines.join(" ").slice(0, 360);
+}
+
 async function loadRegistry() {
   return readJsonSubset(path.join(REPO, "registry.yaml"), {});
 }
@@ -323,8 +355,9 @@ async function collectDocs(registry) {
     const text = await readText(full, "");
     const [frontmatter, body] = parseFrontmatter(text);
     const headings = body.split(/\r?\n/).filter((line) => line.startsWith("## ")).map((line) => line.slice(3).trim());
-    const plain = body.replace(/`([^`]*)`/g, "$1").replace(/\s+/g, " ").trim();
-    docs.push({ id: docId, project_id: row.project_id || "", type: row.doc_type || frontmatter.type || "", title: markdownTitle(body, row.title || docId), path: row.path || "", owner: row.owner || "", status: row.status || "", sha256: await fileSha256(full), headings, snippet: plain.slice(0, 280), search_text: plain.slice(0, 12000) });
+    const title = markdownTitle(body, row.title || docId);
+    const plain = body.split(/\r?\n/).map(cleanMarkdownLine).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+    docs.push({ id: docId, project_id: row.project_id || "", type: row.doc_type || frontmatter.type || "", title, path: row.path || "", owner: row.owner || "", status: row.status || "", sha256: await fileSha256(full), headings, preview: markdownPreview(body, title), snippet: plain.slice(0, 280), search_text: plain.slice(0, 12000) });
   }
   return docs;
 }
