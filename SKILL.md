@@ -11,7 +11,7 @@ Treat Git as the operating system:
 
 - Git repository: canonical source of truth for projects, task specs, project documents, asset manifests, policies, review logs, and durable decisions.
 - GitHub PRs or GitLab MRs: approval path for project state changes, document edits, task spec changes, and policy/template changes.
-- GitHub/GitLab Issues or event files: lightweight task discussion and execution updates.
+- Event/review files: lightweight task discussion, output attempts, failed verification, withdrawals, supersessions, and review cancellation.
 - Website: human interface that reads Git-derived data and turns edits into PRs/MRs instead of mutating canonical state directly.
 - Agents: use deterministic scripts first; use LLM judgment only to draft, summarize, review quality, or propose changes.
 
@@ -21,7 +21,7 @@ Keep implementation codebases in their own GitHub/GitLab repos. This management 
 
 - Owner/Admin: initialize the repo, configure provider permissions, deploy the website, approve schema/policy changes.
 - Manager/PM: create projects, documents, and tasks; review PR/MR diffs; run validation; publish the website; inspect blockers and workload.
-- Assignee: read assigned tasks, project docs, dependencies, and submit status/output updates through the website, Issues, or task events.
+- Assignee: read assigned tasks, project docs, dependencies, and submit status/output updates through the website, controller commands, or task events.
 - Reviewer: verify task outputs against `policies/output-requirements.yaml`, append review records, and move tasks through review states.
 - Agent installer: run `doctor --interactive`, collect required credentials/access, and report missing permissions without storing long-lived secrets unless explicitly approved.
 
@@ -40,6 +40,7 @@ Use `scripts/git_pm.py` for deterministic work:
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" audit-docs --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" compile --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" create-milestone --repo ".\project-hub" --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Maya"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK3 --actor "Paul" --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --message "FTUE tracking implementation ready for review."
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
 ```
@@ -98,7 +99,7 @@ Use Git-local files for project intent:
 1. Pull latest Git state.
 2. Read project README, roadmap, milestone, task folder, and Markdown docs from the local repo.
 3. Use the website/API or controller to propose changes as PRs/MRs.
-4. Use direct task events or Issues for lightweight execution updates.
+4. Use direct task events and attempt/review commands for lightweight execution updates.
 5. Run `validate`, `audit-docs`, and `compile` before merging.
 
 Use PRs/MRs for durable changes:
@@ -110,9 +111,9 @@ Use PRs/MRs for durable changes:
 - Review policy/template changes.
 - Live document terminology or scope changes.
 
-Use task events/issues for operational updates:
+Use task events and attempt/review commands for operational updates:
 
-- Started, blocked, submitted output, handoff note, quick status update.
+- Started, blocked, submitted output, output attempt, verification failed, output withdrawn, output superseded, review cancelled, handoff note, quick status update.
 
 Use documents for durable artifacts beyond tasks:
 
@@ -128,13 +129,18 @@ Use controller commands for normal day-to-day updates:
 ```powershell
 git_pm.py update-task --repo . --task-id TASK3 --actor "Paul" --status "In Progress" --user-update "Prototype branch is running locally."
 git_pm.py submit-output --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/org/game-client/pull/42" --message "Ready for review."
+git_pm.py record-attempt --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/org/game-client/pull/42" --message "Ready for objective verification."
+git_pm.py record-verification-failed --repo . --task-id TASK3 --reviewer "Maya" --reason "PR link is inaccessible to the reviewer account."
+git_pm.py supersede-output --repo . --task-id TASK3 --actor "Paul" --new-output "https://github.com/org/game-client/pull/43" --reason "Replaced inaccessible PR with the correct branch."
+git_pm.py withdraw-output --repo . --task-id TASK3 --actor "Paul" --reason "Output is obsolete after scope changed."
+git_pm.py cancel-review --repo . --task-id TASK3 --actor "Maya" --reason "Review cancelled because the output was withdrawn."
 git_pm.py review-task --repo . --task-id TASK3 --reviewer "Maya" --decision "approved" --notes "Accepted."
 git_pm.py register-asset --repo . --project-id PROJ1 --title "HUD mockup v2" --asset-type "mockup" --source-url "https://example.com/mockup" --used-by "PROJ1,TASK4" --owner "Fern"
 ```
 
 New tasks live in folders: `task.yaml`, `notes.md`, `outputs.md`, and `attachments/README.md`. Use the task folder for task-local context and link large artifacts through the asset manifest.
 
-If a PR/MR marks a task `Done` but the output cannot be objectively verified, reject the PR/MR. The failed check or review comment is the footprint. If the output is accessible but quality/scope is insufficient, record `changes_requested` through `review-task`.
+If a PR/MR marks a task `Done` but the output cannot be objectively verified, reject the PR/MR and record `record-verification-failed` against the task in a follow-up proposal or review branch. If the output is accessible but quality/scope is insufficient, record `changes_requested` through `review-task`.
 
 Run `audit-docs` regularly, especially before planning reviews or release reviews. It checks validation, expected master files, live docs, terminology drift, and blocked task details. Configure terminology checks in `policies/terminology.yaml`; use narrow `allowed_occurrences` for exact historical references that should remain unchanged.
 
@@ -150,10 +156,13 @@ Treat live docs and historical records differently. Update live docs when termin
 - `references/role-workflows.md`: owner/manager/assignee/reviewer/agent rules.
 - `references/git-provider-setup.md`: GitHub/GitLab tokens, repository permissions, PR/MR creation, and deployment guidance.
 - `references/website.md`: website behavior, API endpoints, proposal flow, and deployment options.
+- `references/attempt-workflows.md`: output attempts, failed verification, withdrawals, supersessions, and cancellation.
+- `references/team-cadence.md`: daily/weekly/release operating rhythm for a six-person team.
 
 ## Safety Rules
 
 - Do not trust hand-copied IDs. Allocate IDs through the controller or website backend and validate every PR/MR.
+- Do not use Git Issues as task state for this workflow. Use Git files, event/review logs, and PRs/MRs.
 - Do not let the website mutate the default branch directly. It must create a branch and PR/MR, or produce a local proposal in dry-run mode.
 - Do not store binary-heavy assets directly in normal Git. Use Git LFS, Releases/Packages, object storage, or external product repos, and register them in `assets/assets.yaml`.
 - Do not treat generated website data as canonical. Rebuild it from Markdown/YAML.

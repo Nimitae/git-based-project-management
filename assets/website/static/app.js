@@ -96,6 +96,17 @@ function renderEvents() {
   `).join("") || `<div class="event"><strong>No recent events</strong><span>Task activity will appear here.</span></div>`;
 }
 
+function renderReviewQueue() {
+  const queue = state.data ? (state.data.review_queue || []) : [];
+  $("reviewQueueList").innerHTML = queue.map((item) => `
+    <article class="event">
+      <strong>${escapeHtml(item.task_id || "")} ${escapeHtml((item.reasons || []).join(", "))}</strong>
+      <span>${escapeHtml(item.assigned_to || "Unassigned")} / ${escapeHtml(item.reviewer || "No reviewer")} / ${escapeHtml(item.status || "")}</span>
+      <p>${escapeHtml(item.title || "")}${item.output ? ` / ${escapeHtml(item.output)}` : ""}</p>
+    </article>
+  `).join("") || `<div class="event"><strong>No review queue items</strong><span>Submitted, failed, withdrawn, and cancelled reviews will appear here.</span></div>`;
+}
+
 function renderSummary() {
   const data = state.data;
   if (!data) return;
@@ -117,6 +128,7 @@ function render() {
   renderDocs();
   renderAssets();
   renderEvents();
+  renderReviewQueue();
 }
 
 async function loadData() {
@@ -268,6 +280,66 @@ $("reviewTaskForm").addEventListener("submit", (event) => {
     reviewer: form.get("reviewer"),
     decision: form.get("decision"),
     notes: form.get("notes")
+  });
+});
+
+$("recordAttemptForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "record_attempt",
+    task_id: form.get("task_id"),
+    actor: form.get("actor"),
+    output: form.get("output"),
+    message: form.get("message")
+  });
+});
+
+$("verificationFailedForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "record_verification_failed",
+    task_id: form.get("task_id"),
+    reviewer: form.get("reviewer"),
+    output: form.get("output"),
+    reason: form.get("reason")
+  });
+});
+
+$("withdrawOutputForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "withdraw_output",
+    task_id: form.get("task_id"),
+    actor: form.get("actor"),
+    output: form.get("output"),
+    reason: form.get("reason")
+  });
+});
+
+$("supersedeOutputForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "supersede_output",
+    task_id: form.get("task_id"),
+    actor: form.get("actor"),
+    old_output: form.get("old_output"),
+    new_output: form.get("new_output"),
+    reason: form.get("reason")
+  });
+});
+
+$("cancelReviewForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitUpdate({
+    type: "cancel_review",
+    task_id: form.get("task_id"),
+    actor: form.get("actor"),
+    reason: form.get("reason")
   });
 });
 

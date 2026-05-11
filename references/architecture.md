@@ -2,7 +2,7 @@
 
 ## Principle
 
-Git is canonical. The website, generated dashboards, issues, and exported views are interfaces over Git state.
+Git is canonical. The website, generated dashboards, PR/MR views, and exported views are interfaces over Git state.
 
 ## Canonical Surfaces
 
@@ -10,7 +10,6 @@ Git is canonical. The website, generated dashboards, issues, and exported views 
 |---|---|---|
 | Management repo | Project state, docs, task specs, assets index, policies, events, reviews | Yes |
 | Pull requests / merge requests | Durable change approval and audit trail | Yes |
-| Issues | Task discussion and lightweight updates | Optional |
 | Website | Read UI and proposal UI | No |
 | Implementation repos | Product/game/website/source code | Yes for product code |
 | Releases/packages/object storage | Large assets, builds, videos | Yes for binaries |
@@ -96,8 +95,8 @@ Use these types unless a team extends the schema:
 
 - Durable changes go through pull requests or merge requests.
 - The website creates proposals; it does not write directly to the default branch.
-- Task status and quick updates may use issue comments or append-only event files.
+- Task status, output attempts, and quick updates use controller commands, website proposals, and append-only event/review files.
 - Submitted output moves a task to `In Review`. `Done` and `Verified` require output plus an approved review record.
-- If output cannot be objectively verified, reject the PR/MR. The failed check or review comment is the historical footprint.
+- If output cannot be objectively verified, reject the PR/MR and record a `verification_failed` attempt event/review so the attempted completion is visible in Git history.
 - Each managed project may link multiple implementation repos. Agents must read the management repo first, then inspect only the implementation repos relevant to their assigned work.
 - Live documents should be audited for terminology and scope drift. Historical records should be preserved unless an explicit correction is approved.

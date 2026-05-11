@@ -72,6 +72,13 @@ def main() -> int:
         run(["create-task", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke editable task", "--assigned-to", "Terence", "--role", "PM", "--expected-output", "Setup Confirmation"])
         if not (repo / "projects" / "PROJ1-demo-project-hub" / "tasks" / "TASK2" / "notes.md").exists():
             raise RuntimeError("task folder notes.md was not created")
+        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--output", "https://example.com/attempt-v1", "--message", "First attempt ready"])
+        run(["record-verification-failed", "--repo", str(repo), "--task-id", "TASK2", "--reviewer", "Terence", "--reason", "Output link returned 404"])
+        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--output", "https://example.com/attempt-v2", "--message", "Second attempt ready"])
+        run(["supersede-output", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--new-output", "https://example.com/attempt-v3", "--reason", "Uploaded replacement build"])
+        run(["cancel-review", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--reason", "Reviewer changed before checks began"])
+        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--output", "https://example.com/attempt-v4", "--message", "Final attempt ready"])
+        run(["withdraw-output", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--reason", "Output no longer required"])
         run(["register-asset", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke mockup", "--asset-type", "mockup", "--source-url", "https://example.com/mockup", "--used-by", "PROJ1,TASK1", "--owner", "Terence"])
         validate = run(["validate", "--repo", str(repo), "--json"])
         issues = json.loads(validate.stdout)["issues"]
@@ -82,6 +89,13 @@ def main() -> int:
         run(["compile", "--repo", str(repo)])
         if not (repo / ".project-hub" / "site-data" / "search-index.json").exists():
             raise RuntimeError("search index was not generated")
+        compiled = json.loads((repo / ".project-hub" / "site-data" / "project-hub.json").read_text(encoding="utf-8"))
+        attempt_types = {event["event_type"] for event in compiled["events"] if event.get("task_id") == "TASK2"}
+        expected_attempt_types = {"output_attempted", "verification_failed", "output_superseded", "review_cancelled", "output_withdrawn"}
+        if not expected_attempt_types.issubset(attempt_types):
+            raise RuntimeError(f"missing attempt events: {expected_attempt_types - attempt_types}")
+        if not compiled.get("review_queue"):
+            raise RuntimeError("review queue should include failed, withdrawn, or in-review attempts")
         port = free_port()
         env = os.environ.copy()
         for key in ["GPM_LIVE_PROPOSALS", "GPM_PROVIDER", "GPM_GITHUB_REPO", "GPM_GITHUB_TOKEN", "GPM_GITLAB_PROJECT", "GPM_GITLAB_TOKEN"]:

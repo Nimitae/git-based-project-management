@@ -250,9 +250,11 @@ tasks/TASK123/
   attachments/README.md
 ```
 
-`submit-output` moves a task to `In Review`. `Done` and `Verified` require output, acceptance criteria, and an approved review record.
+`record-attempt` or `submit-output` moves a task to `In Review`. `Done` and `Verified` require output, acceptance criteria, and an approved review record.
 
-If a PR/MR marks a task `Done` but the output cannot be objectively verified, reject the PR/MR. The failed validation, failed CI check, or requested-change review is the historical footprint. Do not merge false completed state.
+If a PR/MR marks a task `Done` but the output cannot be objectively verified, reject the PR/MR and record `record-verification-failed`. The rejected PR/MR plus the append-only failed verification record is the historical footprint. Do not merge false completed state.
+
+Use `withdraw-output`, `supersede-output`, and `cancel-review` when an output is no longer current or a review stops before a decision. Do not rewrite the old attempt out of history.
 
 ## Assets And Mockups
 

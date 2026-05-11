@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.log
+.project-hub/proposals/
+project-hub-website.png

@@ -144,6 +144,53 @@ def main() -> int:
                 "doc_type": "meeting-notes",
             },
         )
+        attempt_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "record_attempt",
+                "task_id": "TASK1",
+                "actor": "Terence",
+                "output": "https://example.com/node-attempt",
+                "message": "Node attempt ready",
+            },
+        )
+        failed_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "record_verification_failed",
+                "task_id": "TASK1",
+                "reviewer": "Terence",
+                "reason": "Node output was not reachable",
+            },
+        )
+        withdraw_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "withdraw_output",
+                "task_id": "TASK1",
+                "actor": "Terence",
+                "reason": "Output no longer needed",
+            },
+        )
+        supersede_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "supersede_output",
+                "task_id": "TASK1",
+                "actor": "Terence",
+                "new_output": "https://example.com/node-attempt-v2",
+                "reason": "Replacement output uploaded",
+            },
+        )
+        cancel_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "cancel_review",
+                "task_id": "TASK1",
+                "actor": "Terence",
+                "reason": "Review cancelled before checks began",
+            },
+        )
         proposal_dir = Path(proposal.get("proposal_dir", ""))
         if not proposal_dir.exists():
             raise RuntimeError(f"proposal directory was not created: {proposal}")
@@ -153,6 +200,15 @@ def main() -> int:
             raise RuntimeError(f"asset proposal directory was not created: {asset_proposal}")
         if not Path(doc_proposal.get("proposal_dir", "")).exists():
             raise RuntimeError(f"doc proposal directory was not created: {doc_proposal}")
+        for name, row in {
+            "attempt": attempt_proposal,
+            "failed": failed_proposal,
+            "withdraw": withdraw_proposal,
+            "supersede": supersede_proposal,
+            "cancel": cancel_proposal,
+        }.items():
+            if not Path(row.get("proposal_dir", "")).exists():
+                raise RuntimeError(f"{name} proposal directory was not created: {row}")
         with request.urlopen(base + "/", timeout=10) as response:
             html = response.read().decode("utf-8")
         if "Project Workspace" not in html:

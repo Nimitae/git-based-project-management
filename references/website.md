@@ -17,6 +17,7 @@ It must:
 The bundled static UI supports:
 
 - Project/document/task dashboard.
+- Review queue for work in review, failed verification, withdrawn outputs, cancelled reviews, and stale review items.
 - Search across docs/tasks/assets/owners/status.
 - Task table with status and expected output.
 - Documents panel with Git paths.
@@ -25,7 +26,7 @@ The bundled static UI supports:
 - Create-task proposal form.
 - Create-milestone proposal form.
 - Create-document proposal form.
-- Update-task, submit-output, add-event, and review-task forms.
+- Update-task, record-attempt, submit-output, record-verification-failed, withdraw-output, supersede-output, cancel-review, add-event, and review-task forms.
 - Register-asset proposal form.
 - Edit-file proposal form.
 - Historical record edit guard for completed tasks, finalized docs, and append-only logs.
@@ -116,6 +117,53 @@ If `base_sha256` is provided and the file has changed, the website rejects the p
 
 ```json
 {
+  "type": "record_attempt",
+  "task_id": "TASK3",
+  "actor": "Paul",
+  "output": "https://gitlab.garena.com/group/game/-/merge_requests/42",
+  "message": "FTUE tracking implementation ready for objective checks."
+}
+```
+
+```json
+{
+  "type": "record_verification_failed",
+  "task_id": "TASK3",
+  "reviewer": "Maya",
+  "reason": "The linked MR deployment is not accessible to the reviewer account."
+}
+```
+
+```json
+{
+  "type": "supersede_output",
+  "task_id": "TASK3",
+  "actor": "Paul",
+  "new_output": "https://gitlab.garena.com/group/game/-/merge_requests/43",
+  "reason": "Replaced the inaccessible output with the correct branch."
+}
+```
+
+```json
+{
+  "type": "withdraw_output",
+  "task_id": "TASK3",
+  "actor": "Paul",
+  "reason": "Output no longer required after scope changed."
+}
+```
+
+```json
+{
+  "type": "cancel_review",
+  "task_id": "TASK3",
+  "actor": "Maya",
+  "reason": "Review cancelled because the output was withdrawn."
+}
+```
+
+```json
+{
   "type": "create_doc",
   "project_id": "PROJ1",
   "title": "Sprint Planning 2026-05-11",
@@ -191,6 +239,7 @@ For a manager asking an agent to deploy:
 - The first screen is the dashboard, not a landing page.
 - Long-form prose edits are accepted, but saved as MR proposals.
 - Status updates should be lightweight and visible in recent events.
+- Attempt outcomes should be visible in the review queue and backed by append-only event/review records.
 - Daily workflow forms should create the same canonical file changes an agent would create from the CLI.
 - Raw file edits should not be used to rewrite completed tasks, finalized docs, events, or reviews. Create a project note, decision, event, or review instead.
 - Raw file edits should include `base_sha256` when available so stale edits are rejected before PR/MR creation.

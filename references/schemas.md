@@ -240,6 +240,17 @@ Task events are append-only JSONL rows in `events/task-events.jsonl`:
 
 Use events for daily notes, handoffs, blockers, and output submission context. Durable task state still belongs in the task YAML file.
 
+Attempt-related event types are:
+
+- `submitted_output`: legacy/short path for output submission.
+- `output_attempted`: a concrete attempt to complete a task was submitted.
+- `verification_failed`: an objective check failed.
+- `output_withdrawn`: a submitted output was pulled from review.
+- `output_superseded`: a submitted output was replaced by another output.
+- `review_cancelled`: review stopped before approval or changes-requested.
+
+Attempt events may include `output`, `previous_output`, `old_output`, `new_output`, `review_id`, or `decision` fields depending on the command.
+
 ## Reviews
 
 Task reviews are append-only JSONL rows in `reviews/task-reviews.jsonl`:
@@ -256,7 +267,9 @@ Task reviews are append-only JSONL rows in `reviews/task-reviews.jsonl`:
 }
 ```
 
-Valid review decisions are `approved`, `changes_requested`, and `rejected`.
+Valid review decisions are `approved`, `changes_requested`, `rejected`, `verification_failed`, and `cancelled`.
+
+`verification_failed` is used when the output cannot pass an objective check such as link access, build availability, test execution, schema validation, asset load, or reproduction. `cancelled` is used when review stops before a substantive decision.
 
 ## Document Types
 
@@ -305,7 +318,7 @@ Example: if the team renames `heroes` to `champions`, update live docs. Do not r
 
 `submit-output` should move work to `In Review`, not directly to `Done`. `Done` and `Verified` require output, acceptance criteria, and an approved review record. A PR/MR that directly marks a task `Done` without those fields should fail validation.
 
-If output cannot be objectively accessed or checked, reject the PR/MR. Use the failed check or review comment as the historical footprint.
+If output cannot be objectively accessed or checked, reject the PR/MR and record `record-verification-failed` or a direct `review-task --decision verification_failed` follow-up so the attempt is searchable in Git.
 
 ## Terminology Policy
 

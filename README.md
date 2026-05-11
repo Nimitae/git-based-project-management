@@ -125,13 +125,15 @@ python scripts/node_website_smoke_test.py
 
 - Durable changes go through pull requests or merge requests.
 - The website is a human interface over Git, not the canonical database.
+- This operating model does not use Git Issues for task tracking; task state, events, reviews, and attempts live in Git files.
 - IDs are allocated by the controller or website backend, then validated before merge.
 - Roadmaps and milestones provide planning structure above tasks.
 - New tasks live in task folders with `task.yaml`, `notes.md`, `outputs.md`, and `attachments/`.
-- Day-to-day task updates use `update-task`, `add-event`, `submit-output`, `review-task`, and `register-asset`.
+- Day-to-day task updates use `update-task`, `add-event`, `record-attempt`, `record-verification-failed`, `withdraw-output`, `supersede-output`, `cancel-review`, `submit-output`, `review-task`, and `register-asset`.
 - `submit-output` moves work to `In Review`; `Done` and `Verified` require output plus an approved review record.
+- Every attempt to complete work should leave an append-only event or review record, even when the output is rejected, withdrawn, superseded, or review is cancelled.
 - Meeting minutes, project notes, weekly updates, risk logs, retros, and decisions are first-class documents created with `create-doc`.
 - Live docs should be updated when terminology or scope changes; completed tasks and finalized records should stay historical.
 - Large videos, builds, source art, and captures should live in Git LFS, releases/packages, object storage, or implementation repos, with references tracked in asset manifests.
 
-See `references/operating-model.md`, `references/architecture.md`, `references/schemas.md`, `references/wiki-guidelines.md`, `references/day-to-day-workflows.md`, and `references/website.md` for the detailed model.
+See `references/operating-model.md`, `references/architecture.md`, `references/schemas.md`, `references/wiki-guidelines.md`, `references/day-to-day-workflows.md`, `references/attempt-workflows.md`, `references/team-cadence.md`, and `references/website.md` for the detailed model.

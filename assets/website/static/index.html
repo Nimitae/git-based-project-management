@@ -80,6 +80,13 @@
               </div>
               <div id="eventList" class="event-list"></div>
             </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Review Queue</h2>
+              </div>
+              <div id="reviewQueueList" class="event-list"></div>
+            </section>
           </div>
         </section>
 
@@ -188,10 +195,77 @@
                     <option value="approved">Approved</option>
                     <option value="changes_requested">Changes Requested</option>
                     <option value="rejected">Rejected</option>
+                    <option value="verification_failed">Verification Failed</option>
+                    <option value="cancelled">Cancelled</option>
                   </select>
                 </label>
                 <label>Notes <textarea name="notes" rows="4" placeholder="Concrete review notes"></textarea></label>
                 <button type="submit">Record Review</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Record Attempt</h2>
+              </div>
+              <form id="recordAttemptForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" placeholder="Paul" required /></label>
+                <label>Output <input name="output" placeholder="PR, MR, build, asset, capture, or doc link" required /></label>
+                <label>Message <textarea name="message" rows="4" placeholder="What changed and what should be verified?"></textarea></label>
+                <button type="submit">Record Attempt</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Verification Failed</h2>
+              </div>
+              <form id="verificationFailedForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
+                <label>Reviewer <input name="reviewer" placeholder="Maya" required /></label>
+                <label>Output <input name="output" placeholder="Optional attempted output link" /></label>
+                <label>Reason <textarea name="reason" rows="4" placeholder="Objective check that failed" required></textarea></label>
+                <button type="submit">Record Failed Verification</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Withdraw Output</h2>
+              </div>
+              <form id="withdrawOutputForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" placeholder="Paul" required /></label>
+                <label>Previous Output <input name="output" placeholder="Optional output being withdrawn" /></label>
+                <label>Reason <textarea name="reason" rows="4" placeholder="Why this output should no longer be reviewed" required></textarea></label>
+                <button type="submit">Withdraw Output</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Supersede Output</h2>
+              </div>
+              <form id="supersedeOutputForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" placeholder="Paul" required /></label>
+                <label>Old Output <input name="old_output" placeholder="Optional previous output" /></label>
+                <label>New Output <input name="new_output" placeholder="Updated PR, MR, build, asset, capture, or doc link" required /></label>
+                <label>Reason <textarea name="reason" rows="4" placeholder="What changed since the previous output?" required></textarea></label>
+                <button type="submit">Supersede Output</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Cancel Review</h2>
+              </div>
+              <form id="cancelReviewForm" class="form-stack">
+                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" placeholder="Maya" required /></label>
+                <label>Reason <textarea name="reason" rows="4" placeholder="Why review stopped before a decision" required></textarea></label>
+                <button type="submit">Cancel Review</button>
               </form>
             </section>
 

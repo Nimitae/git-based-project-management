@@ -60,10 +60,10 @@ Typical updates:
 
 ```powershell
 git_pm.py update-task --repo . --task-id TASK3 --actor "Paul" --status "In Progress" --user-update "Prototype branch is running locally; tuning hooks still missing."
-git_pm.py submit-output --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/example/game-client/pull/42" --message "Ability prototype ready; reviewer should check input buffering and cooldown values."
+git_pm.py record-attempt --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/example/game-client/pull/42" --message "Ability prototype ready; reviewer should check input buffering and cooldown values."
 ```
 
-`submit-output` moves work to `In Review`. Do not manually mark a task `Done` unless the same PR/MR includes an accessible output and an approved review record.
+`record-attempt` and `submit-output` move work to `In Review`. Do not manually mark a task `Done` unless the same PR/MR includes an accessible output and an approved review record.
 
 ## Artist
 
@@ -151,11 +151,20 @@ Reviewers record outcomes with `review-task`:
 ```powershell
 git_pm.py review-task --repo . --task-id TASK3 --reviewer "Maya" --decision "changes_requested" --notes "Prototype works, but tuning values need to be linked from the design doc."
 git_pm.py review-task --repo . --task-id TASK4 --reviewer "Gina" --decision "approved" --notes "Icons match current art direction and are ready for integration."
+git_pm.py record-verification-failed --repo . --task-id TASK7 --reviewer "Maya" --reason "The staging endpoint returns 404 for the linked PR deployment."
 ```
 
 Use `approved` only when output is accessible, acceptance criteria are satisfied, and the task can move to `Verified`.
 
-If output cannot be accessed or objectively checked, reject/request changes on the PR/MR. Do not merge invalid `Done` state just to preserve history; the failed check or review comment is the history.
+If output cannot be accessed or objectively checked, reject the PR/MR and record `record-verification-failed`. Do not merge invalid `Done` state just to preserve history; the rejected PR/MR plus append-only failed verification record is the history.
+
+For changed or obsolete outputs:
+
+```powershell
+git_pm.py supersede-output --repo . --task-id TASK3 --actor "Paul" --new-output "https://github.com/example/game-client/pull/43" --reason "Replaced the inaccessible PR with the correct branch."
+git_pm.py withdraw-output --repo . --task-id TASK3 --actor "Paul" --reason "Output no longer required after scope changed."
+git_pm.py cancel-review --repo . --task-id TASK3 --actor "Maya" --reason "Review cancelled because the output was withdrawn."
+```
 
 ## Website Workflow
 
@@ -164,7 +173,7 @@ The website exposes the same flows:
 - `Tasks`: search and filter.
 - `Docs`: find canonical docs.
 - `Assets`: find mockups, art, videos, builds, and external files.
-- `Updates`: update task status, submit output, add events, and review tasks.
+- `Updates`: update task status, record attempts, submit output, record failed verification, withdraw/supersede outputs, cancel reviews, add events, and review tasks.
 - `Create`: create tasks/docs, register assets, and propose raw file edits.
 - Milestones: create milestone PR/MR proposals for roadmap planning.
 

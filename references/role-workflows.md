@@ -38,8 +38,9 @@ Allowed:
 - Read latest project docs and task specs after pulling the management repo.
 - Read the roadmap, current milestone, and task folder before changing work.
 - Inspect only the implementation repos linked to assigned tasks or project state.
-- Update assigned task status through website proposals, issues, or append-only events.
+- Update assigned task status through website proposals, controller commands, or append-only events.
 - Submit output links.
+- Record every completion attempt, withdrawal, supersession, or cancelled review through the attempt commands.
 - Propose doc/spec changes in a PR/MR.
 - Add project notes, meeting-note follow-ups, or task events when new context appears.
 
@@ -63,7 +64,7 @@ Required:
 
 - Include concrete reasons for revise/fail decisions.
 - Keep reviews append-only.
-- Reject objective verification failures instead of merging invalid `Done` state.
+- Reject objective verification failures instead of merging invalid `Done` state, then record `verification_failed` so the attempt is visible.
 
 ## Field Authority
 
@@ -79,12 +80,15 @@ Use PRs/MRs for:
 - Durable docs such as proposals, designs, reports, and decisions.
 - Meeting notes, project notes, weekly updates, risk logs, and retrospectives.
 
-Use task events or issues for:
+Use task events and attempt/review commands for:
 
 - Quick status updates.
 - Blockers.
 - Handoffs.
 - Output submission notes.
+- Failed objective verification.
+- Withdrawn or superseded outputs.
+- Cancelled reviews.
 
 ## Live Versus Historical Records
 

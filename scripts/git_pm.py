@@ -27,6 +27,15 @@ TASK_STATUSES = {"Backlog", "In Progress", "Blocked", "In Review", "Done", "Veri
 CHECKPOINTS = {"", "Drafting", "Ready", "Review", "Revising", "Blocked", "Accepted"}
 PROJECT_STATUSES = {"Planning", "Active", "Paused", "Shipped", "Archived"}
 MILESTONE_STATUSES = {"Planned", "Active", "At Risk", "Done", "Archived"}
+REVIEW_DECISIONS = {"approved", "changes_requested", "rejected", "verification_failed", "cancelled"}
+ATTEMPT_EVENT_TYPES = {
+    "submitted_output",
+    "output_attempted",
+    "verification_failed",
+    "output_withdrawn",
+    "output_superseded",
+    "review_cancelled",
+}
 DOC_TYPES = {
     "proposal",
     "brief",
@@ -603,7 +612,7 @@ Add implementation repositories in `project.yaml` so collaborators and agents kn
 
 - Cadence: weekly planning/review unless the team changes it.
 - Durable changes should go through PRs/MRs.
-- Daily execution updates should use task events or task-local notes.
+- Daily execution updates should use task events, attempt records, or task-local notes.
 """
 
 
@@ -632,6 +641,8 @@ Use it to track project state, tasks, proposals, design docs, playtest reports, 
 - `policies/review-gates.yaml`: rules for Done/Verified task states.
 
 Agents and humans should make durable changes through pull requests or merge requests.
+
+Task state, events, reviews, and output attempts live in Git files. This workflow does not use Git Issues for task tracking.
 """,
     )
     write_text(repo / project["path"], dump(project))
@@ -683,6 +694,10 @@ def template_files() -> dict[str, str]:
     files["templates/policies/role-permissions.yaml"] = dump(default_role_permissions_policy())
     files["templates/policies/storage-policy.yaml"] = dump(default_storage_policy())
     files["templates/asset.yaml"] = dump({"title": "Asset title", "type": "mockup", "storage": "external-link", "path": "", "source_url": "", "used_by": ["PROJ#"], "owner": "Owner"})
+    files["templates/verification-failed.md"] = "# Verification Failed\n\n## Attempt\n\n- Task: `TASK#`\n- Output: \n- Reviewer: \n\n## Objective Check That Failed\n\nDescribe the exact check, command, asset access, build, contract, or evidence that could not be verified.\n\n## Expected Next Step\n\nKeep the task out of `Done`/`Verified`. Record `record-verification-failed`, then revise, supersede, withdraw, or cancel the review.\n"
+    files["templates/output-withdrawn.md"] = "# Output Withdrawn\n\n## Attempt\n\n- Task: `TASK#`\n- Previous output: \n- Actor: \n\n## Reason\n\nExplain why the output is no longer current, no longer needed, or cannot be reviewed.\n\n## Follow-up\n\nState whether the task returns to `In Progress`, gets superseded by a new output, or is replaced by another task.\n"
+    files["templates/review-cancelled.md"] = "# Review Cancelled\n\n## Review\n\n- Task: `TASK#`\n- Reviewer/actor: \n- Output under review: \n\n## Reason\n\nExplain why review stopped before an approval or changes-requested decision.\n\n## Follow-up\n\nState who owns the next action and whether the output should be withdrawn, superseded, or resubmitted.\n"
+    files["templates/team-cadence.md"] = "# Team Cadence\n\n## Daily\n\n- Pull latest project hub state.\n- Review assigned task folders and project docs.\n- Record status, blockers, attempts, and handoffs with controller commands or the website.\n\n## Weekly\n\n- Review roadmap, milestones, review queue, blockers, validation issues, and terminology drift.\n- Update live docs and master files through PRs/MRs.\n\n## Release / Milestone\n\n- Run validation, document audit, website compile, and output review gates before marking work `Done` or `Verified`.\n"
     return files
 
 
@@ -718,6 +733,7 @@ def default_definition_of_done_policy() -> dict:
         "schema_version": 1,
         "done_requires": ["output", "acceptance_criteria", "approved_review"],
         "verified_requires": ["output", "acceptance_criteria", "approved_review"],
+        "attempt_events": ["submitted_output", "output_attempted", "verification_failed", "output_withdrawn", "output_superseded", "review_cancelled"],
         "objective_failures_block_merge": True,
         "subjective_failures_create_review": True,
     }
@@ -729,10 +745,15 @@ def default_review_gates_policy() -> dict:
         "submit_output_status": "In Review",
         "approved_review_status": "Verified",
         "changes_requested_status": "In Progress",
+        "verification_failed_status": "In Progress",
+        "withdrawn_output_status": "In Progress",
+        "cancelled_review_status": "In Progress",
         "reject_done_without_output": True,
         "reject_done_without_approved_review": True,
         "reject_verified_without_approved_review": True,
+        "reject_done_when_output_not_objectively_verifiable": True,
         "allow_failed_subjective_review_history": True,
+        "record_all_output_attempts": True,
     }
 
 
@@ -775,7 +796,7 @@ Rules:
 - Durable changes merge through PRs/MRs.
 - Schema, policy, and template changes require owner/manager review.
 - A PR/MR that marks a task `Done` or `Verified` must pass objective validation before merge.
-- If output cannot be accessed or parsed, reject the PR/MR instead of merging an invalid completed state.
+- If output cannot be accessed or parsed, reject the PR/MR and record failed verification instead of merging an invalid completed state.
 """
 
 
@@ -787,7 +808,8 @@ Agents should:
 - Pull latest Git state before reading tasks or docs.
 - Read the project README, roadmap, task folder, linked docs, and linked implementation repos before changing work.
 - Use controller commands for IDs, task updates, docs, assets, events, reviews, and milestones.
-- Prefer `In Review` plus a submitted output over directly marking work `Done`.
+- Prefer `In Review` plus a recorded/submitted output over directly marking work `Done`.
+- Record failed verification, withdrawn outputs, superseded outputs, and cancelled reviews instead of losing attempt history.
 - Preserve historical records. Add decisions, project notes, events, or reviews instead of rewriting completed context.
 - Run `validate`, `audit-docs`, and `compile` before proposing a durable change.
 """
@@ -1119,6 +1141,70 @@ def collect_milestones(repo: Path, registry: dict) -> list[dict]:
     return rows
 
 
+def parse_iso(value: str) -> dt.datetime | None:
+    if not value:
+        return None
+    try:
+        return dt.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def latest_attempts(events: list[dict]) -> dict[str, dict]:
+    latest: dict[str, dict] = {}
+    for event in events:
+        if event.get("event_type") in ATTEMPT_EVENT_TYPES and event.get("task_id"):
+            latest[event["task_id"]] = event
+    return latest
+
+
+def build_review_queue(tasks: list[dict], events: list[dict], reviews: list[dict]) -> list[dict]:
+    latest_by_task = latest_attempts(events)
+    latest_review_by_task: dict[str, dict] = {}
+    for review in reviews:
+        if review.get("task_id"):
+            latest_review_by_task[review["task_id"]] = review
+    now = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
+    rows = []
+    for task in tasks:
+        task_id = task.get("id", "")
+        latest = latest_by_task.get(task_id, {})
+        event_type = latest.get("event_type", "")
+        reasons = []
+        age_days = None
+        created_at = parse_iso(latest.get("created_at", ""))
+        if created_at:
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=dt.timezone(dt.timedelta(hours=8)))
+            age_days = max(0, (now - created_at).days)
+        if task.get("status") == "In Review":
+            reasons.append("in_review")
+            if age_days is not None and age_days >= 3:
+                reasons.append("stale_review")
+        if event_type == "verification_failed":
+            reasons.append("verification_failed")
+        if event_type == "output_withdrawn":
+            reasons.append("output_withdrawn")
+        if event_type == "review_cancelled":
+            reasons.append("review_cancelled")
+        if reasons:
+            rows.append(
+                {
+                    "task_id": task_id,
+                    "title": task.get("title", ""),
+                    "assigned_to": task.get("assigned_to", ""),
+                    "reviewer": task.get("reviewer", ""),
+                    "status": task.get("status", ""),
+                    "output": task.get("output", ""),
+                    "reasons": reasons,
+                    "age_days": age_days,
+                    "latest_attempt": latest,
+                    "latest_review": latest_review_by_task.get(task_id, {}),
+                }
+            )
+    return rows
+
+
 def build_search_index(data: dict) -> list[dict]:
     rows = []
     for project in data.get("projects", []):
@@ -1131,12 +1217,19 @@ def build_search_index(data: dict) -> list[dict]:
         rows.append({"kind": "doc", "id": doc.get("id", ""), "title": doc.get("title", ""), "path": doc.get("path", ""), "text": " ".join([doc.get("title", ""), doc.get("type", ""), doc.get("owner", ""), doc.get("search_text", "")])})
     for asset in data.get("assets", []):
         rows.append({"kind": "asset", "id": asset.get("id", ""), "title": asset.get("title", ""), "path": asset.get("path", ""), "text": json.dumps(asset, ensure_ascii=False)})
+    for event in data.get("events", []):
+        rows.append({"kind": "event", "id": event.get("id", ""), "title": event.get("event_type", ""), "path": "events/task-events.jsonl", "text": json.dumps(event, ensure_ascii=False)})
+    for review in data.get("reviews", []):
+        rows.append({"kind": "review", "id": review.get("id", ""), "title": review.get("decision", ""), "path": "reviews/task-reviews.jsonl", "text": json.dumps(review, ensure_ascii=False)})
     return rows
 
 
 def compile_data(repo: Path) -> dict:
     registry = load_registry(repo)
     issues = validate_repo(repo)
+    events = read_jsonl(repo / "events/task-events.jsonl")
+    reviews = read_jsonl(repo / "reviews/task-reviews.jsonl")
+    tasks = collect_tasks(repo, registry)
     data = {
         "schema_version": registry.get("schema_version", 2),
         "repo_name": registry.get("name", repo.name),
@@ -1150,11 +1243,13 @@ def compile_data(repo: Path) -> dict:
         "projects": [{"id": key, **value} for key, value in registry.get("projects", {}).items()],
         "milestones": collect_milestones(repo, registry),
         "docs": collect_docs(repo, registry),
-        "tasks": collect_tasks(repo, registry),
+        "tasks": tasks,
         "assets": [{"id": key, **value} for key, value in registry.get("assets", {}).items()],
         "people": registry.get("people", []),
-        "events": read_jsonl(repo / "events/task-events.jsonl"),
-        "reviews": read_jsonl(repo / "reviews/task-reviews.jsonl"),
+        "events": events,
+        "reviews": reviews,
+        "latest_attempts": latest_attempts(events),
+        "review_queue": build_review_queue(tasks, events, reviews),
         "validation": {"issues": issues},
     }
     data["search_index"] = build_search_index(data)
@@ -1401,9 +1496,9 @@ def sync_task_ref(registry: dict, task_id: str, path: str, task: dict) -> None:
     }
 
 
-def make_event(registry: dict, task: dict, actor: str, event_type: str, message: str) -> dict:
+def make_event(registry: dict, task: dict, actor: str, event_type: str, message: str, extra: dict | None = None) -> dict:
     event_id = allocate_id(registry, "event")
-    return {
+    record = {
         "id": event_id,
         "task_id": task.get("id", ""),
         "project_id": task.get("project_id", ""),
@@ -1412,6 +1507,10 @@ def make_event(registry: dict, task: dict, actor: str, event_type: str, message:
         "message": message or "",
         "created_at": now_iso(),
     }
+    for key, value in (extra or {}).items():
+        if value is not None:
+            record[key] = value
+    return record
 
 
 def event_action(repo: Path, record: dict) -> dict:
@@ -1455,7 +1554,14 @@ def submit_output_actions(repo: Path, registry: dict, payload: dict) -> tuple[st
     title, _message, actions = update_task_actions(repo, registry, payload)
     task_id = payload.get("task_id", "")
     _path, task = load_task_record(repo, registry, task_id)
-    event = make_event(registry, task, payload.get("actor", ""), "submitted_output", payload.get("message") or payload.get("output") or f"Submitted output for {task_id}")
+    event = make_event(
+        registry,
+        task,
+        payload.get("actor", ""),
+        "submitted_output",
+        payload.get("message") or payload.get("output") or f"Submitted output for {task_id}",
+        {"output": payload.get("output", "")},
+    )
     actions[0]["content"] = dump(registry)
     actions.append(event_action(repo, event))
     return title.replace("Update", "Submit output for", 1), event["message"], actions
@@ -1464,11 +1570,13 @@ def submit_output_actions(repo: Path, registry: dict, payload: dict) -> tuple[st
 def review_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
     task_id = payload.get("task_id", "")
     path, task = load_task_record(repo, registry, task_id)
+    if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
+        raise GitPMError(f"refusing to review {task_id}; {task.get('status')} tasks are historical. Create a follow-up task, decision, project-note, or errata instead.")
     decision = payload.get("decision", "changes_requested")
     if decision == "approved":
         task["status"] = "Verified"
         task["checkpoint"] = "Ready"
-    elif decision in {"changes_requested", "rejected"}:
+    elif decision in {"changes_requested", "rejected", "verification_failed", "cancelled"}:
         task["status"] = "In Progress"
         task["checkpoint"] = "Revising"
     sync_task_ref(registry, task_id, path, task)
@@ -1482,9 +1590,148 @@ def review_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str,
         "notes": payload.get("notes", ""),
         "created_at": now_iso(),
     }
-    event = make_event(registry, task, payload.get("reviewer", ""), f"review_{decision}", payload.get("notes", "") or f"{decision} review for {task_id}")
+    event_type = {"verification_failed": "verification_failed", "cancelled": "review_cancelled"}.get(decision, f"review_{decision}")
+    event = make_event(
+        registry,
+        task,
+        payload.get("reviewer", ""),
+        event_type,
+        payload.get("notes", "") or f"{decision} review for {task_id}",
+        {"review_id": review_id, "decision": decision, "output": task.get("output", "")},
+    )
     title = f"Review {task_id}: {decision}"
     return title, event["message"], [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update", "file_path": path, "content": dump(task)},
+        review_action(repo, review),
+        event_action(repo, event),
+    ]
+
+
+def record_attempt_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    task_id = payload.get("task_id", "")
+    path, task = load_task_record(repo, registry, task_id)
+    if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
+        raise GitPMError(f"refusing to record a new attempt for {task_id}; {task.get('status')} tasks are historical. Reopen through review workflow or create a follow-up task.")
+    output = payload.get("output", "")
+    task["status"] = "In Review"
+    task["checkpoint"] = "Review"
+    if output:
+        task["output"] = output
+    message = payload.get("message") or output or f"Output attempt recorded for {task_id}"
+    task["user_update"] = message
+    sync_task_ref(registry, task_id, path, task)
+    event = make_event(registry, task, payload.get("actor", ""), "output_attempted", message, {"output": output or task.get("output", "")})
+    return f"Record attempt for {task_id}", message, [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update", "file_path": path, "content": dump(task)},
+        event_action(repo, event),
+    ]
+
+
+def record_verification_failed_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    task_id = payload.get("task_id", "")
+    path, task = load_task_record(repo, registry, task_id)
+    if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
+        raise GitPMError(f"refusing to record failed verification for {task_id}; {task.get('status')} tasks are historical. Create a follow-up task, decision, project-note, or errata instead.")
+    reason = payload.get("reason") or payload.get("notes") or "Output could not be objectively verified."
+    reviewer = payload.get("reviewer", "")
+    task["status"] = "In Progress"
+    task["checkpoint"] = "Revising"
+    task["user_update"] = f"Verification failed: {reason}"
+    sync_task_ref(registry, task_id, path, task)
+    review_id = allocate_id(registry, "review")
+    review = {
+        "id": review_id,
+        "task_id": task_id,
+        "project_id": task.get("project_id", ""),
+        "reviewer": reviewer,
+        "decision": "verification_failed",
+        "notes": reason,
+        "created_at": now_iso(),
+    }
+    event = make_event(
+        registry,
+        task,
+        reviewer,
+        "verification_failed",
+        reason,
+        {"review_id": review_id, "decision": "verification_failed", "output": payload.get("output") or task.get("output", "")},
+    )
+    return f"Verification failed for {task_id}", reason, [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update", "file_path": path, "content": dump(task)},
+        review_action(repo, review),
+        event_action(repo, event),
+    ]
+
+
+def withdraw_output_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    task_id = payload.get("task_id", "")
+    path, task = load_task_record(repo, registry, task_id)
+    if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
+        raise GitPMError(f"refusing to withdraw output for {task_id}; {task.get('status')} tasks are historical. Create a follow-up task, decision, project-note, or errata instead.")
+    reason = payload.get("reason") or "Output withdrawn."
+    previous_output = payload.get("output") or task.get("output", "")
+    task["status"] = "In Progress"
+    task["checkpoint"] = "Revising"
+    task["output"] = ""
+    task["user_update"] = f"Output withdrawn: {reason}"
+    sync_task_ref(registry, task_id, path, task)
+    event = make_event(registry, task, payload.get("actor", ""), "output_withdrawn", reason, {"previous_output": previous_output})
+    return f"Withdraw output for {task_id}", reason, [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update", "file_path": path, "content": dump(task)},
+        event_action(repo, event),
+    ]
+
+
+def supersede_output_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    task_id = payload.get("task_id", "")
+    path, task = load_task_record(repo, registry, task_id)
+    if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
+        raise GitPMError(f"refusing to supersede output for {task_id}; {task.get('status')} tasks are historical. Create a follow-up task, decision, project-note, or errata instead.")
+    new_output = payload.get("new_output") or payload.get("output", "")
+    if not new_output:
+        raise GitPMError("supersede_output requires new_output")
+    reason = payload.get("reason") or "Output superseded."
+    old_output = payload.get("old_output") or task.get("output", "")
+    task["status"] = "In Review"
+    task["checkpoint"] = "Review"
+    task["output"] = new_output
+    task["user_update"] = f"Output superseded: {reason}"
+    sync_task_ref(registry, task_id, path, task)
+    event = make_event(registry, task, payload.get("actor", ""), "output_superseded", reason, {"old_output": old_output, "new_output": new_output})
+    return f"Supersede output for {task_id}", reason, [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update", "file_path": path, "content": dump(task)},
+        event_action(repo, event),
+    ]
+
+
+def cancel_review_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    task_id = payload.get("task_id", "")
+    path, task = load_task_record(repo, registry, task_id)
+    if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
+        raise GitPMError(f"refusing to cancel review for {task_id}; {task.get('status')} tasks are historical. Create a follow-up task, decision, project-note, or errata instead.")
+    reason = payload.get("reason") or payload.get("notes") or "Review cancelled."
+    actor = payload.get("actor") or payload.get("reviewer", "")
+    task["status"] = "In Progress"
+    task["checkpoint"] = "Revising"
+    task["user_update"] = f"Review cancelled: {reason}"
+    sync_task_ref(registry, task_id, path, task)
+    review_id = allocate_id(registry, "review")
+    review = {
+        "id": review_id,
+        "task_id": task_id,
+        "project_id": task.get("project_id", ""),
+        "reviewer": actor,
+        "decision": "cancelled",
+        "notes": reason,
+        "created_at": now_iso(),
+    }
+    event = make_event(registry, task, actor, "review_cancelled", reason, {"review_id": review_id, "output": task.get("output", "")})
+    return f"Cancel review for {task_id}", reason, [
         {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
         {"action": "update", "file_path": path, "content": dump(task)},
         review_action(repo, review),
@@ -1553,6 +1800,36 @@ def cmd_submit_output(args: argparse.Namespace) -> int:
 
 def cmd_review_task(args: argparse.Namespace) -> int:
     result = apply_payload(repo_arg(args.repo), {"type": "review_task", "task_id": args.task_id, "reviewer": args.reviewer, "decision": args.decision, "notes": args.notes})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_record_attempt(args: argparse.Namespace) -> int:
+    result = apply_payload(repo_arg(args.repo), {"type": "record_attempt", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_record_verification_failed(args: argparse.Namespace) -> int:
+    result = apply_payload(repo_arg(args.repo), {"type": "record_verification_failed", "task_id": args.task_id, "reviewer": args.reviewer, "reason": args.reason, "output": args.output})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_withdraw_output(args: argparse.Namespace) -> int:
+    result = apply_payload(repo_arg(args.repo), {"type": "withdraw_output", "task_id": args.task_id, "actor": args.actor, "reason": args.reason, "output": args.output})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_supersede_output(args: argparse.Namespace) -> int:
+    result = apply_payload(repo_arg(args.repo), {"type": "supersede_output", "task_id": args.task_id, "actor": args.actor, "old_output": args.old_output, "new_output": args.new_output, "reason": args.reason})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_cancel_review(args: argparse.Namespace) -> int:
+    result = apply_payload(repo_arg(args.repo), {"type": "cancel_review", "task_id": args.task_id, "actor": args.actor, "reason": args.reason})
     print(json.dumps(result, indent=2))
     return 0
 
@@ -1767,6 +2044,21 @@ def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
     if change_type == "review_task":
         registry = load_registry(repo)
         return review_task_actions(repo, registry, payload)
+    if change_type == "record_attempt":
+        registry = load_registry(repo)
+        return record_attempt_actions(repo, registry, payload)
+    if change_type == "record_verification_failed":
+        registry = load_registry(repo)
+        return record_verification_failed_actions(repo, registry, payload)
+    if change_type == "withdraw_output":
+        registry = load_registry(repo)
+        return withdraw_output_actions(repo, registry, payload)
+    if change_type == "supersede_output":
+        registry = load_registry(repo)
+        return supersede_output_actions(repo, registry, payload)
+    if change_type == "cancel_review":
+        registry = load_registry(repo)
+        return cancel_review_actions(repo, registry, payload)
     if change_type == "register_asset":
         registry = load_registry(repo)
         return register_asset_actions(repo, registry, payload)
@@ -2160,9 +2452,49 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_repo(p)
     p.add_argument("--task-id", required=True)
     p.add_argument("--reviewer", required=True)
-    p.add_argument("--decision", choices=["approved", "changes_requested", "rejected"], required=True)
+    p.add_argument("--decision", choices=sorted(REVIEW_DECISIONS), required=True)
     p.add_argument("--notes", default="")
     p.set_defaults(func=cmd_review_task)
+
+    p = sub.add_parser("record-attempt")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--message", default="")
+    p.set_defaults(func=cmd_record_attempt)
+
+    p = sub.add_parser("record-verification-failed")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--reviewer", required=True)
+    p.add_argument("--reason", required=True)
+    p.add_argument("--output", default="")
+    p.set_defaults(func=cmd_record_verification_failed)
+
+    p = sub.add_parser("withdraw-output")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--reason", required=True)
+    p.add_argument("--output", default="")
+    p.set_defaults(func=cmd_withdraw_output)
+
+    p = sub.add_parser("supersede-output")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--new-output", required=True)
+    p.add_argument("--old-output", default="")
+    p.add_argument("--reason", required=True)
+    p.set_defaults(func=cmd_supersede_output)
+
+    p = sub.add_parser("cancel-review")
+    add_common_repo(p)
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--reason", required=True)
+    p.set_defaults(func=cmd_cancel_review)
 
     p = sub.add_parser("register-asset")
     add_common_repo(p)

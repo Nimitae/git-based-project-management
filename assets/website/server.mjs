@@ -13,6 +13,7 @@ const PORT = Number(process.env.PORT || 8787);
 const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "In Review", "Done", "Verified", "Iceboxed"]);
 const PROJECT_STATUSES = new Set(["Planning", "Active", "Paused", "Shipped", "Archived"]);
 const MILESTONE_STATUSES = new Set(["Planned", "Active", "At Risk", "Done", "Archived"]);
+const ATTEMPT_EVENT_TYPES = new Set(["submitted_output", "output_attempted", "verification_failed", "output_withdrawn", "output_superseded", "review_cancelled"]);
 const DOC_TYPES = new Set(["proposal", "brief", "feature-brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "telemetry-spec", "api-contract", "playtest-plan", "playtest-session", "playtest-report", "qa-report", "qa-bug-report", "research-report", "asset-brief", "3d-asset-brief", "art-handoff", "3d-model-handoff", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"]);
 const HISTORICAL_TASK_STATUSES = new Set(["Done", "Verified", "Iceboxed"]);
 const HISTORICAL_DOC_STATUSES = new Set(["final", "archived", "historical"]);
@@ -303,6 +304,57 @@ function buildSearchIndex(data) {
   for (const task of data.tasks || []) rows.push({ kind: "task", id: task.id || "", title: task.title || "", path: task.path || "", text: JSON.stringify(task) });
   for (const doc of data.docs || []) rows.push({ kind: "doc", id: doc.id || "", title: doc.title || "", path: doc.path || "", text: [doc.title || "", doc.type || "", doc.owner || "", doc.search_text || ""].join(" ") });
   for (const asset of data.assets || []) rows.push({ kind: "asset", id: asset.id || "", title: asset.title || "", path: asset.path || "", text: JSON.stringify(asset) });
+  for (const event of data.events || []) rows.push({ kind: "event", id: event.id || "", title: event.event_type || "", path: "events/task-events.jsonl", text: JSON.stringify(event) });
+  for (const review of data.reviews || []) rows.push({ kind: "review", id: review.id || "", title: review.decision || "", path: "reviews/task-reviews.jsonl", text: JSON.stringify(review) });
+  return rows;
+}
+
+function latestAttempts(events) {
+  const latest = {};
+  for (const event of events || []) {
+    if (ATTEMPT_EVENT_TYPES.has(event.event_type) && event.task_id) latest[event.task_id] = event;
+  }
+  return latest;
+}
+
+function buildReviewQueue(tasks, events, reviews) {
+  const latestByTask = latestAttempts(events);
+  const latestReviewByTask = {};
+  for (const review of reviews || []) {
+    if (review.task_id) latestReviewByTask[review.task_id] = review;
+  }
+  const now = Date.now();
+  const rows = [];
+  for (const task of tasks || []) {
+    const latest = latestByTask[task.id] || {};
+    const reasons = [];
+    let ageDays = null;
+    if (latest.created_at) {
+      const time = Date.parse(latest.created_at);
+      if (!Number.isNaN(time)) ageDays = Math.max(0, Math.floor((now - time) / 86400000));
+    }
+    if (task.status === "In Review") {
+      reasons.push("in_review");
+      if (ageDays !== null && ageDays >= 3) reasons.push("stale_review");
+    }
+    if (latest.event_type === "verification_failed") reasons.push("verification_failed");
+    if (latest.event_type === "output_withdrawn") reasons.push("output_withdrawn");
+    if (latest.event_type === "review_cancelled") reasons.push("review_cancelled");
+    if (reasons.length) {
+      rows.push({
+        task_id: task.id || "",
+        title: task.title || "",
+        assigned_to: task.assigned_to || "",
+        reviewer: task.reviewer || "",
+        status: task.status || "",
+        output: task.output || "",
+        reasons,
+        age_days: ageDays,
+        latest_attempt: latest,
+        latest_review: latestReviewByTask[task.id] || {}
+      });
+    }
+  }
   return rows;
 }
 
@@ -320,6 +372,9 @@ async function readJsonl(relPath) {
 async function compileData() {
   const registry = await loadRegistry();
   const issues = await validateRepo(registry);
+  const events = await readJsonl("events/task-events.jsonl");
+  const reviews = await readJsonl("reviews/task-reviews.jsonl");
+  const tasks = await collectTasks(registry);
   const data = {
     schema_version: registry.schema_version || 2,
     repo_name: registry.name || path.basename(REPO),
@@ -333,11 +388,13 @@ async function compileData() {
     projects: Object.entries(registry.projects || {}).map(([id, value]) => ({ id, ...value })),
     milestones: await collectMilestones(registry),
     docs: await collectDocs(registry),
-    tasks: await collectTasks(registry),
+    tasks,
     assets: Object.entries(registry.assets || {}).map(([id, value]) => ({ id, ...value })),
     people: registry.people || [],
-    events: await readJsonl("events/task-events.jsonl"),
-    reviews: await readJsonl("reviews/task-reviews.jsonl"),
+    events,
+    reviews,
+    latest_attempts: latestAttempts(events),
+    review_queue: buildReviewQueue(tasks, events, reviews),
     validation: { issues }
   };
   data.search_index = buildSearchIndex(data);
@@ -420,9 +477,13 @@ function syncTaskRef(registry, taskId, taskPath, task) {
   registry.tasks[taskId] = { project_id: task.project_id || "", path: taskPath, folder: taskFolderFromPath(taskPath), title: task.title || "", assigned_to: task.assigned_to || "", status: task.status || "Backlog", milestone: task.milestone || "", feature_area: task.feature_area || "", expected_output: task.expected_output || "" };
 }
 
-function makeEvent(registry, task, actor, eventType, message) {
+function makeEvent(registry, task, actor, eventType, message, extra = {}) {
   const eventId = allocateId(registry, "event");
-  return { id: eventId, task_id: task.id || "", project_id: task.project_id || "", actor: actor || "Unknown", event_type: eventType || "update", message: message || "", created_at: nowIso() };
+  const record = { id: eventId, task_id: task.id || "", project_id: task.project_id || "", actor: actor || "Unknown", event_type: eventType || "update", message: message || "", created_at: nowIso() };
+  for (const [key, value] of Object.entries(extra || {})) {
+    if (value !== undefined && value !== null) record[key] = value;
+  }
+  return record;
 }
 
 async function eventAction(record) {
@@ -458,7 +519,7 @@ async function updateTaskActions(registry, payload) {
 async function submitOutputActions(registry, payload) {
   const result = await updateTaskActions(registry, { ...payload, status: payload.status || "In Review", checkpoint: payload.checkpoint || "Review", suppress_event: true });
   const { task } = await loadTaskRecord(registry, payload.task_id || "");
-  const event = makeEvent(registry, { ...task, id: payload.task_id }, payload.actor || "", "submitted_output", payload.message || payload.output || `Submitted output for ${payload.task_id}`);
+  const event = makeEvent(registry, { ...task, id: payload.task_id }, payload.actor || "", "submitted_output", payload.message || payload.output || `Submitted output for ${payload.task_id}`, { output: payload.output || "" });
   result.actions[0].content = dump(registry);
   result.actions.push(await eventAction(event));
   result.title = result.title.replace("Update", "Submit output for");
@@ -469,6 +530,7 @@ async function submitOutputActions(registry, payload) {
 async function reviewTaskActions(registry, payload) {
   const taskId = payload.task_id || "";
   const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to review ${taskId}; ${task.status} tasks are historical. Create a follow-up task, decision, project note, or errata instead.`);
   const decision = payload.decision || "changes_requested";
   if (decision === "approved") {
     task.status = "Verified";
@@ -479,8 +541,87 @@ async function reviewTaskActions(registry, payload) {
   }
   syncTaskRef(registry, taskId, taskPath, task);
   const review = { id: allocateId(registry, "review"), task_id: taskId, project_id: task.project_id || "", reviewer: payload.reviewer || "", decision, notes: payload.notes || "", created_at: nowIso() };
-  const event = makeEvent(registry, task, payload.reviewer || "", `review_${decision}`, payload.notes || `${decision} review for ${taskId}`);
+  const eventType = decision === "verification_failed" ? "verification_failed" : decision === "cancelled" ? "review_cancelled" : `review_${decision}`;
+  const event = makeEvent(registry, task, payload.reviewer || "", eventType, payload.notes || `${decision} review for ${taskId}`, { review_id: review.id, decision, output: task.output || "" });
   return { title: `Review ${taskId}: ${decision}`, message: event.message, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await reviewAction(review), await eventAction(event)] };
+}
+
+async function recordAttemptActions(registry, payload) {
+  const taskId = payload.task_id || "";
+  const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to record a new attempt for ${taskId}; ${task.status} tasks are historical. Reopen through review workflow or create a follow-up task.`);
+  const output = payload.output || "";
+  task.status = "In Review";
+  task.checkpoint = "Review";
+  if (output) task.output = output;
+  const message = payload.message || output || `Output attempt recorded for ${taskId}`;
+  task.user_update = message;
+  syncTaskRef(registry, taskId, taskPath, task);
+  const event = makeEvent(registry, task, payload.actor || "", "output_attempted", message, { output: output || task.output || "" });
+  return { title: `Record attempt for ${taskId}`, message, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await eventAction(event)] };
+}
+
+async function recordVerificationFailedActions(registry, payload) {
+  const taskId = payload.task_id || "";
+  const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to record failed verification for ${taskId}; ${task.status} tasks are historical. Create a follow-up task, decision, project note, or errata instead.`);
+  const reason = payload.reason || payload.notes || "Output could not be objectively verified.";
+  task.status = "In Progress";
+  task.checkpoint = "Revising";
+  task.user_update = `Verification failed: ${reason}`;
+  syncTaskRef(registry, taskId, taskPath, task);
+  const reviewId = allocateId(registry, "review");
+  const review = { id: reviewId, task_id: taskId, project_id: task.project_id || "", reviewer: payload.reviewer || "", decision: "verification_failed", notes: reason, created_at: nowIso() };
+  const event = makeEvent(registry, task, payload.reviewer || "", "verification_failed", reason, { review_id: reviewId, decision: "verification_failed", output: payload.output || task.output || "" });
+  return { title: `Verification failed for ${taskId}`, message: reason, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await reviewAction(review), await eventAction(event)] };
+}
+
+async function withdrawOutputActions(registry, payload) {
+  const taskId = payload.task_id || "";
+  const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to withdraw output for ${taskId}; ${task.status} tasks are historical. Create a follow-up task, decision, project note, or errata instead.`);
+  const reason = payload.reason || "Output withdrawn.";
+  const previousOutput = payload.output || task.output || "";
+  task.status = "In Progress";
+  task.checkpoint = "Revising";
+  task.output = "";
+  task.user_update = `Output withdrawn: ${reason}`;
+  syncTaskRef(registry, taskId, taskPath, task);
+  const event = makeEvent(registry, task, payload.actor || "", "output_withdrawn", reason, { previous_output: previousOutput });
+  return { title: `Withdraw output for ${taskId}`, message: reason, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await eventAction(event)] };
+}
+
+async function supersedeOutputActions(registry, payload) {
+  const taskId = payload.task_id || "";
+  const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to supersede output for ${taskId}; ${task.status} tasks are historical. Create a follow-up task, decision, project note, or errata instead.`);
+  const newOutput = payload.new_output || payload.output || "";
+  if (!newOutput) throw new Error("supersede_output requires new_output");
+  const reason = payload.reason || "Output superseded.";
+  const oldOutput = payload.old_output || task.output || "";
+  task.status = "In Review";
+  task.checkpoint = "Review";
+  task.output = newOutput;
+  task.user_update = `Output superseded: ${reason}`;
+  syncTaskRef(registry, taskId, taskPath, task);
+  const event = makeEvent(registry, task, payload.actor || "", "output_superseded", reason, { old_output: oldOutput, new_output: newOutput });
+  return { title: `Supersede output for ${taskId}`, message: reason, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await eventAction(event)] };
+}
+
+async function cancelReviewActions(registry, payload) {
+  const taskId = payload.task_id || "";
+  const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
+  if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to cancel review for ${taskId}; ${task.status} tasks are historical. Create a follow-up task, decision, project note, or errata instead.`);
+  const reason = payload.reason || payload.notes || "Review cancelled.";
+  const actor = payload.actor || payload.reviewer || "";
+  task.status = "In Progress";
+  task.checkpoint = "Revising";
+  task.user_update = `Review cancelled: ${reason}`;
+  syncTaskRef(registry, taskId, taskPath, task);
+  const reviewId = allocateId(registry, "review");
+  const review = { id: reviewId, task_id: taskId, project_id: task.project_id || "", reviewer: actor, decision: "cancelled", notes: reason, created_at: nowIso() };
+  const event = makeEvent(registry, task, actor, "review_cancelled", reason, { review_id: reviewId, output: task.output || "" });
+  return { title: `Cancel review for ${taskId}`, message: reason, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await reviewAction(review), await eventAction(event)] };
 }
 
 async function registerAssetActions(registry, payload) {
@@ -549,6 +690,21 @@ async function proposalActions(payload) {
   }
   if (payload.type === "review_task") {
     return reviewTaskActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "record_attempt") {
+    return recordAttemptActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "record_verification_failed") {
+    return recordVerificationFailedActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "withdraw_output") {
+    return withdrawOutputActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "supersede_output") {
+    return supersedeOutputActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "cancel_review") {
+    return cancelReviewActions(await loadRegistry(), payload);
   }
   if (payload.type === "register_asset") {
     return registerAssetActions(await loadRegistry(), payload);
