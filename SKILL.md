@@ -145,6 +145,8 @@ Use Git-local files for project intent:
 4. Use direct task events and attempt/review commands for lightweight execution updates.
 5. Run `validate`, `audit-docs`, and `compile` before merging.
 
+Keep Project Hub repos synchronized after every file change. If an agent or website workflow modifies tracked Project Hub files such as `registry.yaml`, project/task YAML, docs, assets, policies, events, reviews, or templates, it must create a Git commit and push it to the configured remote before reporting the work complete. Do not leave successful Project Hub edits only in the local worktree. For durable changes that require review, push the proposal branch and provide the PR/MR instead of committing directly to the protected default branch. If commit or push is blocked by credentials, network, branch protection, or validation errors, stop and report the exact branch, files changed, validation state, and next command needed to finish synchronization.
+
 Use PRs/MRs for durable changes:
 
 - Project objective, scope, acceptance criteria, or decision changes.
