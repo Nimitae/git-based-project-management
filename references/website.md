@@ -16,7 +16,7 @@ It must:
 
 The bundled static UI supports:
 
-- Project/EW/task dashboard.
+- Project/document/task dashboard.
 - Search across docs/tasks/owners/status.
 - Task table with status and expected output.
 - Documents panel with Git paths.
@@ -30,24 +30,24 @@ The default deployable website runtime is Node.js:
 
 ```powershell
 cd assets\website
-$env:PROJECT_OS_REPO = "C:\path\to\project-os"
+$env:GPM_REPO = "C:\path\to\project-hub"
 npm start
 ```
 
 The Python controller can still serve the same UI for local agent workflows:
 
 ```powershell
-project_os.py website --repo . --port 8787
+git_pm.py website --repo . --port 8787
 ```
 
-Use the Node.js runtime for Docker/container deployment. Use the Python runtime when the agent is already operating through `project_os.py` and wants a quick local preview.
+Use the Node.js runtime for Docker/container deployment. Use the Python runtime when the agent is already operating through `git_pm.py` and wants a quick local preview.
 
 ## API
 
 Both website runtimes serve:
 
-- `GET /api/data`: compiled Project OS data.
-- `POST /api/proposals`: create a local dry-run proposal or GitLab MR.
+- `GET /api/data`: compiled Project Hub data.
+- `POST /api/proposals`: create a local dry-run proposal, GitHub PR, or GitLab MR.
 - `GET /healthz`: readiness check.
 
 Proposal payload examples:
@@ -56,7 +56,7 @@ Proposal payload examples:
 {
   "type": "create_task",
   "title": "Draft concept doc",
-  "ew_id": "EW1",
+  "project_id": "PROJ1",
   "assigned_to": "Samantha",
   "role": "Design",
   "expected_output": "Concept Doc"
@@ -66,9 +66,9 @@ Proposal payload examples:
 ```json
 {
   "type": "edit_file",
-  "path": "projects/PROJ1/ews/EW1.md",
+  "path": "projects/PROJ1-sample-game/docs/design/DOC2-core-loop.md",
   "content": "...full file content...",
-  "message": "Update EW1 scope"
+  "message": "Update core loop scope"
 }
 ```
 
@@ -77,15 +77,15 @@ Proposal payload examples:
 For local Python review:
 
 ```powershell
-project_os.py compile --repo .
-project_os.py website --repo . --port 8787
+git_pm.py compile --repo .
+git_pm.py website --repo . --port 8787
 ```
 
 For local Node.js review:
 
 ```powershell
 cd assets\website
-$env:PROJECT_OS_REPO = "C:\path\to\project-os"
+$env:GPM_REPO = "C:\path\to\project-hub"
 $env:PORT = "8787"
 npm start
 ```
@@ -93,36 +93,35 @@ npm start
 For Docker:
 
 ```powershell
-docker build -t project-os-website assets\website
-docker run --rm -p 8787:8787 -e PROJECT_OS_REPO=/data/project-os -v "C:\path\to\project-os:/data/project-os" project-os-website
+docker build -t project-hub-website assets\website
+docker run --rm -p 8787:8787 -e GPM_REPO=/data/project-hub -v "C:\path\to\project-hub:/data/project-hub" project-hub-website
 ```
 
 For live GitHub PR creation from the website container:
 
 ```powershell
 docker run --rm -p 8787:8787 `
-  -e PROJECT_OS_REPO=/data/project-os `
-  -e PROJECT_OS_PROVIDER=github `
-  -e PROJECT_OS_LIVE_PROPOSALS=1 `
-  -e PROJECT_OS_GITHUB_REPO=owner/git-based-project-management `
-  -e PROJECT_OS_GITHUB_TOKEN=<token> `
-  -v "C:\path\to\project-os:/data/project-os" `
-  project-os-website
+  -e GPM_REPO=/data/project-hub `
+  -e GPM_PROVIDER=github `
+  -e GPM_LIVE_PROPOSALS=1 `
+  -e GPM_GITHUB_REPO=owner/git-based-project-management `
+  -e GPM_GITHUB_TOKEN=<token> `
+  -v "C:\path\to\project-hub:/data/project-hub" `
+  project-hub-website
 ```
 
 For live GitLab MR creation from the website container:
 
 ```powershell
 docker run --rm -p 8787:8787 `
-  -e PROJECT_OS_REPO=/data/project-os `
-  -e PROJECT_OS_PROVIDER=gitlab `
-  -e PROJECT_OS_LIVE_PROPOSALS=1 `
-  -e PROJECT_OS_GITLAB_MR=1 `
-  -e PROJECT_OS_GITLAB_URL=https://gitlab.garena.com `
-  -e PROJECT_OS_GITLAB_PROJECT=group/project-os `
-  -e PROJECT_OS_GITLAB_TOKEN=<token> `
-  -v "C:\path\to\project-os:/data/project-os" `
-  project-os-website
+  -e GPM_REPO=/data/project-hub `
+  -e GPM_PROVIDER=gitlab `
+  -e GPM_LIVE_PROPOSALS=1 `
+  -e GPM_GITLAB_URL=https://gitlab.garena.com `
+  -e GPM_GITLAB_PROJECT=group/project-hub `
+  -e GPM_GITLAB_TOKEN=<token> `
+  -v "C:\path\to\project-hub:/data/project-hub" `
+  project-hub-website
 ```
 
 For a manager asking an agent to deploy:
@@ -131,8 +130,8 @@ For a manager asking an agent to deploy:
 2. Confirm GitLab token permissions.
 3. Run `validate`.
 4. Start the Node.js website in dry-run mode first.
-5. Build and run the Docker image against a mounted Project OS repo.
-6. Switch to live PR/MR mode by setting `PROJECT_OS_LIVE_PROPOSALS=1`, provider, and token/repo env vars.
+5. Build and run the Docker image against a mounted Project Hub repo.
+6. Switch to live PR/MR mode by setting `GPM_LIVE_PROPOSALS=1`, provider, and token/repo env vars.
 7. Configure the service manager/container/runner outside this skill according to team infrastructure.
 
 ## UX Rules

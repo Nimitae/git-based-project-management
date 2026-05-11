@@ -1,29 +1,22 @@
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir, access } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const STATIC_DIR = path.resolve(process.env.PROJECT_OS_STATIC_DIR || path.join(__dirname, "static"));
-const REPO = path.resolve(process.env.PROJECT_OS_REPO || process.cwd());
+const STATIC_DIR = path.resolve(process.env.GPM_STATIC_DIR || path.join(__dirname, "static"));
+const REPO = path.resolve(process.env.GPM_REPO || process.cwd());
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8787);
-
 const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "Done", "Verified", "Iceboxed"]);
-const CHECKPOINTS = new Set(["", "Drafting", "Pending Approval", "Revising", "Ready"]);
-const ID_PREFIX = {
-  initiative: "INIT",
-  project: "PROJ",
-  ew: "EW",
-  task: "TASK",
-  event: "EVENT"
-};
+const PROJECT_STATUSES = new Set(["Planning", "Active", "Paused", "Shipped", "Archived"]);
+const DOC_TYPES = new Set(["proposal", "brief", "game-design", "technical-spec", "playtest-plan", "playtest-report", "qa-report", "research-report", "asset-brief", "video-brief", "build-note", "release-plan", "postmortem", "decision", "meeting-notes"]);
 
 function nowIso() {
   const now = new Date();
-  const offsetMs = 8 * 60 * 60 * 1000;
-  const sg = new Date(now.getTime() + offsetMs);
+  const sg = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   return `${sg.toISOString().replace("Z", "")}+08:00`;
 }
 
@@ -34,18 +27,14 @@ function slugify(value) {
 function safeRepoPath(relPath) {
   const clean = String(relPath || "").replaceAll("\\", "/").replace(/^\/+/, "");
   const full = path.resolve(REPO, clean);
-  if (full !== REPO && !full.startsWith(REPO + path.sep)) {
-    throw new Error(`path escapes repo: ${relPath}`);
-  }
+  if (full !== REPO && !full.startsWith(REPO + path.sep)) throw new Error(`path escapes repo: ${relPath}`);
   return full;
 }
 
 function safeStaticPath(relPath) {
   const clean = String(relPath || "index.html").replaceAll("\\", "/").replace(/^\/+/, "");
   const full = path.resolve(STATIC_DIR, clean);
-  if (full !== STATIC_DIR && !full.startsWith(STATIC_DIR + path.sep)) {
-    throw new Error(`path escapes static dir: ${relPath}`);
-  }
+  if (full !== STATIC_DIR && !full.startsWith(STATIC_DIR + path.sep)) throw new Error(`path escapes static dir: ${relPath}`);
   return full;
 }
 
@@ -61,18 +50,14 @@ async function readText(filePath, fallback = "") {
 async function readJsonSubset(filePath, fallback = null) {
   const text = (await readText(filePath, "")).trim();
   if (!text) return structuredClone(fallback);
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new Error(`${filePath} must use JSON-subset YAML: ${error.message}`);
-  }
+  return JSON.parse(text);
 }
 
 function dump(data) {
   return JSON.stringify(data, null, 2) + "\n";
 }
 
-async function fileExists(filePath) {
+async function exists(filePath) {
   try {
     await access(filePath);
     return true;
@@ -90,8 +75,7 @@ function parseFrontmatter(text) {
   const data = {};
   for (const line of raw.split(/\r?\n/)) {
     const index = line.indexOf(":");
-    if (index === -1) continue;
-    data[line.slice(0, index).trim()] = line.slice(index + 1).trim().replace(/^"|"$/g, "");
+    if (index !== -1) data[line.slice(0, index).trim()] = line.slice(index + 1).trim().replace(/^"|"$/g, "");
   }
   return [data, body];
 }
@@ -118,9 +102,9 @@ function maxSuffix(ids, prefix) {
 }
 
 function allocateId(registry, kind) {
-  const prefix = ID_PREFIX[kind];
-  const section = kind === "project" ? "projects" : kind === "initiative" ? "initiatives" : kind === "ew" ? "ews" : kind === "task" ? "tasks" : null;
-  const existing = section ? Object.keys(registry.entities?.[section] || {}) : [];
+  const prefix = kind === "project" ? "PROJ" : kind === "task" ? "TASK" : kind === "doc" ? "DOC" : "ITEM";
+  const section = kind === "doc" ? "docs" : `${kind}s`;
+  const existing = Object.keys(registry[section] || {});
   registry.next_ids ||= {};
   let number = Number(registry.next_ids[kind] || 1);
   while (existing.includes(`${prefix}${number}`)) number += 1;
@@ -128,52 +112,44 @@ function allocateId(registry, kind) {
   return `${prefix}${number}`;
 }
 
+function projectFolder(projectId, name) {
+  return `${projectId}-${slugify(name)}`;
+}
+
+function docFolder(docType) {
+  if (["proposal", "brief"].includes(docType)) return "proposals";
+  if (["game-design", "technical-spec"].includes(docType)) return "design";
+  if (["playtest-plan", "playtest-report", "qa-report", "research-report"].includes(docType)) return "reports";
+  if (["asset-brief", "video-brief", "build-note"].includes(docType)) return "production";
+  if (["release-plan", "postmortem"].includes(docType)) return "release";
+  if (["decision", "meeting-notes"].includes(docType)) return "notes";
+  return "docs";
+}
+
 async function validateRepo(registry) {
   const issues = [];
-  const entities = registry.entities || {};
-  for (const section of ["initiatives", "projects", "ews", "tasks"]) {
-    if (!entities[section] || typeof entities[section] !== "object") {
-      issues.push({ level: "error", code: "REGISTRY_SECTION", message: `entities.${section} must exist`, path: "registry.yaml" });
-    }
+  for (const section of ["projects", "tasks", "docs", "people", "next_ids"]) {
+    if (!(section in registry)) issues.push({ level: "error", code: "REGISTRY_SECTION", message: `${section} must exist`, path: "registry.yaml" });
   }
-  const kinds = [
-    ["initiative", "initiatives"],
-    ["project", "projects"],
-    ["ew", "ews"],
-    ["task", "tasks"]
-  ];
-  for (const [kind, section] of kinds) {
-    const prefix = ID_PREFIX[kind];
-    const rows = entities[section] || {};
-    const expectedMin = maxSuffix(Object.keys(rows), prefix) + 1;
-    if (Number(registry.next_ids?.[kind] || 1) < expectedMin) {
-      issues.push({ level: "error", code: "NEXT_ID_STALE", message: `next_ids.${kind} should be at least ${expectedMin}`, path: "registry.yaml" });
-    }
+  for (const [kind, section, prefix] of [["project", "projects", "PROJ"], ["task", "tasks", "TASK"], ["doc", "docs", "DOC"]]) {
+    const rows = registry[section] || {};
+    const expected = maxSuffix(Object.keys(rows), prefix) + 1;
+    if (Number(registry.next_ids?.[kind] || 1) < expected) issues.push({ level: "error", code: "NEXT_ID_STALE", message: `next_ids.${kind} should be at least ${expected}`, path: "registry.yaml" });
     for (const [id, row] of Object.entries(rows)) {
-      if (!new RegExp(`^${prefix}\\d+$`).test(id)) {
-        issues.push({ level: "error", code: "ID_FORMAT", message: `${id} should match ${prefix}#`, path: "registry.yaml" });
-      }
-      if (!row.path) {
-        issues.push({ level: "error", code: "PATH_MISSING", message: `${id} has no path`, path: "registry.yaml" });
-      } else if (!(await fileExists(safeRepoPath(row.path)))) {
-        issues.push({ level: "error", code: "PATH_MISSING", message: `${id} path does not exist`, path: row.path });
-      }
+      if (!new RegExp(`^${prefix}\\d+$`).test(id)) issues.push({ level: "error", code: "ID_FORMAT", message: `${id} should match ${prefix}#`, path: "registry.yaml" });
+      const rel = row.path || row.readme;
+      if (rel && !(await exists(safeRepoPath(rel)))) issues.push({ level: "error", code: "PATH_MISSING", message: `${id} path does not exist`, path: rel });
     }
   }
-  for (const [projectId, project] of Object.entries(entities.projects || {})) {
-    if (!entities.initiatives?.[project.initiative_id]) {
-      issues.push({ level: "error", code: "REL_PROJECT_INITIATIVE", message: `${projectId} references missing ${project.initiative_id}`, path: project.path || "" });
-    }
+  for (const [projectId, project] of Object.entries(registry.projects || {})) {
+    if (!PROJECT_STATUSES.has(project.status)) issues.push({ level: "warn", code: "PROJECT_STATUS", message: `${projectId} status is unusual: ${project.status}`, path: project.path || "" });
+    if (!project.owners?.length) issues.push({ level: "warn", code: "PROJECT_OWNER_MISSING", message: `${projectId} has no owners`, path: project.path || "" });
   }
-  for (const [ewId, ew] of Object.entries(entities.ews || {})) {
-    const project = entities.projects?.[ew.project_id];
-    if (!project) {
-      issues.push({ level: "error", code: "REL_EW_PROJECT", message: `${ewId} references missing ${ew.project_id}`, path: ew.path || "" });
-    } else if (ew.initiative_id && ew.initiative_id !== project.initiative_id) {
-      issues.push({ level: "error", code: "REL_EW_INITIATIVE", message: `${ewId} initiative does not match parent project`, path: ew.path || "" });
-    }
+  for (const [docId, doc] of Object.entries(registry.docs || {})) {
+    if (!registry.projects?.[doc.project_id]) issues.push({ level: "error", code: "REL_DOC_PROJECT", message: `${docId} references missing project ${doc.project_id}`, path: doc.path || "" });
+    if (!DOC_TYPES.has(doc.doc_type)) issues.push({ level: "warn", code: "DOC_TYPE", message: `${docId} has unusual doc_type ${doc.doc_type}`, path: doc.path || "" });
   }
-  for (const [taskId, ref] of Object.entries(entities.tasks || {})) {
+  for (const [taskId, ref] of Object.entries(registry.tasks || {})) {
     let task = {};
     try {
       task = await readJsonSubset(safeRepoPath(ref.path), {});
@@ -181,29 +157,11 @@ async function validateRepo(registry) {
       issues.push({ level: "error", code: "TASK_PARSE", message: error.message, path: ref.path || "" });
       continue;
     }
-    if (task.id !== taskId) {
-      issues.push({ level: "error", code: "TASK_ID_MISMATCH", message: `${taskId} file id is ${task.id}`, path: ref.path || "" });
-    }
-    const ewId = task.ew_id || ref.ew_id;
-    if (!entities.ews?.[ewId]) {
-      issues.push({ level: "error", code: "REL_TASK_EW", message: `${taskId} references missing ${ewId}`, path: ref.path || "" });
-    }
-    if (task.status && !TASK_STATUSES.has(task.status)) {
-      issues.push({ level: "error", code: "TASK_STATUS", message: `${taskId} has invalid status ${task.status}`, path: ref.path || "" });
-    }
-    if (!CHECKPOINTS.has(task.checkpoint || "")) {
-      issues.push({ level: "warn", code: "TASK_CHECKPOINT", message: `${taskId} has unusual checkpoint ${task.checkpoint}`, path: ref.path || "" });
-    }
-    if (!task.assigned_to) {
-      issues.push({ level: "warn", code: "TASK_ASSIGNEE_MISSING", message: `${taskId} has no assignee`, path: ref.path || "" });
-    }
-    if (!["Iceboxed", "Verified"].includes(task.status) && !task.expected_output) {
-      issues.push({ level: "warn", code: "TASK_EXPECTED_OUTPUT_MISSING", message: `${taskId} has no expected_output`, path: ref.path || "" });
-    }
+    if (task.id !== taskId) issues.push({ level: "error", code: "TASK_ID_MISMATCH", message: `${taskId} file id is ${task.id}`, path: ref.path || "" });
+    if (!registry.projects?.[task.project_id]) issues.push({ level: "error", code: "REL_TASK_PROJECT", message: `${taskId} references missing project ${task.project_id}`, path: ref.path || "" });
+    if (!TASK_STATUSES.has(task.status)) issues.push({ level: "error", code: "TASK_STATUS", message: `${taskId} has invalid status ${task.status}`, path: ref.path || "" });
     for (const dep of task.dependencies || []) {
-      if (!entities.tasks?.[dep]) {
-        issues.push({ level: "error", code: "REL_TASK_DEPENDENCY", message: `${taskId} depends on missing ${dep}`, path: ref.path || "" });
-      }
+      if (!registry.tasks?.[dep]) issues.push({ level: "error", code: "REL_TASK_DEPENDENCY", message: `${taskId} depends on missing ${dep}`, path: ref.path || "" });
     }
   }
   return issues;
@@ -211,44 +169,25 @@ async function validateRepo(registry) {
 
 async function collectDocs(registry) {
   const docs = [];
-  for (const section of ["initiatives", "projects", "ews"]) {
-    for (const [id, row] of Object.entries(registry.entities?.[section] || {})) {
-      const text = await readText(safeRepoPath(row.path), "");
-      const [frontmatter, body] = parseFrontmatter(text);
-      docs.push({
-        id,
-        type: frontmatter.type || section.replace(/s$/, ""),
-        title: markdownTitle(body, row.name || id),
-        path: row.path,
-        owner: row.owner || "",
-        status: row.status || ""
-      });
-    }
+  for (const [docId, row] of Object.entries(registry.docs || {})) {
+    const text = await readText(safeRepoPath(row.path), "");
+    const [frontmatter, body] = parseFrontmatter(text);
+    docs.push({ id: docId, project_id: row.project_id || "", type: row.doc_type || frontmatter.type || "", title: markdownTitle(body, row.title || docId), path: row.path || "", owner: row.owner || "", status: row.status || "" });
   }
   return docs;
 }
 
 async function collectTasks(registry) {
   const tasks = [];
-  const projects = registry.entities?.projects || {};
-  const ews = registry.entities?.ews || {};
-  for (const [taskId, ref] of Object.entries(registry.entities?.tasks || {})) {
+  for (const [taskId, ref] of Object.entries(registry.tasks || {})) {
     let task = {};
     try {
       task = await readJsonSubset(safeRepoPath(ref.path), {});
     } catch {
       task = { id: taskId, title: ref.title || "", status: "Invalid" };
     }
-    const ew = ews[task.ew_id || ref.ew_id] || {};
-    const project = projects[task.project_id || ref.project_id || ew.project_id] || {};
-    tasks.push({
-      ...ref,
-      ...task,
-      id: taskId,
-      path: ref.path,
-      ew_name: ew.name || "",
-      project_name: project.name || ""
-    });
+    const project = registry.projects?.[task.project_id || ref.project_id] || {};
+    tasks.push({ ...ref, ...task, id: taskId, path: ref.path, project_name: project.name || "" });
   }
   return tasks;
 }
@@ -268,7 +207,7 @@ async function compileData() {
   const registry = await loadRegistry();
   const issues = await validateRepo(registry);
   return {
-    schema_version: registry.schema_version || 1,
+    schema_version: registry.schema_version || 2,
     repo_name: registry.name || path.basename(REPO),
     repo_path: REPO,
     provider: registry.provider || "",
@@ -277,10 +216,9 @@ async function compileData() {
     gitlab_project: registry.gitlab?.project_path || "",
     git_commit: "",
     generated_at: nowIso(),
-    projects: Object.entries(registry.entities?.projects || {}).map(([id, value]) => ({ id, ...value })),
-    ews: Object.entries(registry.entities?.ews || {}).map(([id, value]) => ({ id, ...value })),
-    tasks: await collectTasks(registry),
+    projects: Object.entries(registry.projects || {}).map(([id, value]) => ({ id, ...value })),
     docs: await collectDocs(registry),
+    tasks: await collectTasks(registry),
     people: registry.people || [],
     events: await readJsonl("events/task-events.jsonl"),
     reviews: await readJsonl("reviews/task-reviews.jsonl"),
@@ -289,39 +227,24 @@ async function compileData() {
 }
 
 function createTaskPayload(registry, payload) {
-  const ew = registry.entities?.ews?.[payload.ew_id];
-  if (!ew) throw new Error(`missing EW ${payload.ew_id}`);
+  const project = registry.projects?.[payload.project_id];
+  if (!project) throw new Error(`missing project ${payload.project_id}`);
   const taskId = allocateId(registry, "task");
-  const projectId = ew.project_id;
-  const taskPath = `projects/${projectId}/tasks/${taskId}.yaml`;
-  const task = {
-    id: taskId,
-    ew_id: payload.ew_id,
-    project_id: projectId,
-    title: payload.title || "",
-    assigned_to: payload.assigned_to || "",
-    role: payload.role || "",
-    status: "Backlog",
-    checkpoint: "Drafting",
-    deadline: "",
-    expected_output: payload.expected_output || "",
-    acceptance_criteria: [],
-    dependencies: [],
-    target_repo: "",
-    output: "",
-    ai_update: "",
-    user_update: ""
-  };
-  registry.entities.tasks[taskId] = {
-    ew_id: payload.ew_id,
-    project_id: projectId,
-    path: taskPath,
-    title: task.title,
-    assigned_to: task.assigned_to,
-    status: "Backlog",
-    expected_output: task.expected_output
-  };
+  const taskPath = `projects/${projectFolder(payload.project_id, project.name)}/tasks/${taskId}.yaml`;
+  const task = { id: taskId, project_id: payload.project_id, title: payload.title || "", assigned_to: payload.assigned_to || "", role: payload.role || "", status: "Backlog", checkpoint: "Drafting", deadline: "", expected_output: payload.expected_output || "", acceptance_criteria: [], dependencies: [], target_repo: "", output: "", ai_update: "", user_update: "" };
+  registry.tasks[taskId] = { project_id: payload.project_id, path: taskPath, title: task.title, assigned_to: task.assigned_to, status: "Backlog", expected_output: task.expected_output };
   return { taskId, taskPath, task };
+}
+
+function createDocPayload(registry, payload) {
+  const project = registry.projects?.[payload.project_id];
+  if (!project) throw new Error(`missing project ${payload.project_id}`);
+  const docId = allocateId(registry, "doc");
+  const docType = payload.doc_type || "proposal";
+  const rel = `projects/${projectFolder(payload.project_id, project.name)}/docs/${docFolder(docType)}/${docId}-${slugify(payload.title || "document")}.md`;
+  const text = `---\nid: ${docId}\nproject_id: ${payload.project_id}\ntype: ${docType}\nowner: ${payload.owner || ""}\nstatus: draft\n---\n\n# ${docId} - ${payload.title || "Document"}\n\n## Purpose\n\n## Context\n\n## Content\n\n## Open Questions\n\n`;
+  registry.docs[docId] = { project_id: payload.project_id, doc_type: docType, title: payload.title || "", owner: payload.owner || "", path: rel, status: "draft" };
+  return { docId, rel, text };
 }
 
 async function proposalActions(payload) {
@@ -329,148 +252,103 @@ async function proposalActions(payload) {
     const filePath = String(payload.path || "").replaceAll("\\", "/").replace(/^\/+/, "");
     if (!filePath) throw new Error("edit_file requires path");
     const full = safeRepoPath(filePath);
-    const action = existsSync(full) ? "update" : "create";
-    return {
-      title: payload.message || `Edit ${filePath}`,
-      message: payload.message || `Edit ${filePath}`,
-      actions: [{ action, file_path: filePath, content: payload.content || "" }]
-    };
+    return { title: payload.message || `Edit ${filePath}`, message: payload.message || `Edit ${filePath}`, actions: [{ action: existsSync(full) ? "update" : "create", file_path: filePath, content: payload.content || "" }] };
   }
   if (payload.type === "create_task") {
     const registry = await loadRegistry();
     const { taskId, taskPath, task } = createTaskPayload(registry, payload);
-    return {
-      title: `Create ${taskId}: ${payload.title || ""}`,
-      message: `Create ${taskId}: ${payload.title || ""}`,
-      actions: [
-        { action: "update", file_path: "registry.yaml", content: dump(registry) },
-        { action: "create", file_path: taskPath, content: dump(task) }
-      ]
-    };
+    const title = `Create ${taskId}: ${payload.title || ""}`;
+    return { title, message: title, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "create", file_path: taskPath, content: dump(task) }] };
+  }
+  if (payload.type === "create_doc") {
+    const registry = await loadRegistry();
+    const { docId, rel, text } = createDocPayload(registry, payload);
+    const title = `Create ${docId}: ${payload.title || ""}`;
+    return { title, message: title, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "create", file_path: rel, content: text }] };
   }
   throw new Error(`unknown proposal type: ${payload.type}`);
 }
 
 async function localProposal(title, message, actions) {
   const proposalId = `${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${slugify(title).slice(0, 40)}`;
-  const dir = path.join(REPO, ".project-os", "proposals", proposalId);
+  const dir = path.join(REPO, ".project-hub", "proposals", proposalId);
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, "proposal.json"), dump({ title, message, actions, created_at: nowIso() }), "utf8");
   let index = 0;
   for (const action of actions) {
     index += 1;
-    const safeName = action.file_path.replace(/[^a-zA-Z0-9._-]+/g, "_");
+    let safeName = action.file_path.replace(/[^a-zA-Z0-9._-]+/g, "_");
+    if (safeName.length > 90) {
+      const digest = createHash("sha1").update(action.file_path).digest("hex").slice(0, 10);
+      const ext = path.extname(action.file_path).slice(0, 12);
+      safeName = `${safeName.slice(0, 70).replace(/[._-]+$/g, "")}-${digest}${ext}`;
+    }
     await writeFile(path.join(dir, `${String(index).padStart(2, "0")}-${action.action}-${safeName}`), action.content, "utf8");
   }
   return { mode: "dry-run", proposal_dir: dir, title, actions: actions.length };
 }
 
-async function gitlabApi(method, endpoint, body) {
-  const gitlabUrl = process.env.PROJECT_OS_GITLAB_URL || "";
-  const token = process.env.PROJECT_OS_GITLAB_TOKEN || "";
-  if (!gitlabUrl || !token) throw new Error("GitLab API requires PROJECT_OS_GITLAB_URL and PROJECT_OS_GITLAB_TOKEN");
-  const response = await fetch(`${gitlabUrl.replace(/\/$/, "")}${endpoint}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "PRIVATE-TOKEN": token
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
+async function providerApi(provider, method, endpoint, body) {
+  if (provider === "github") {
+    const apiUrl = process.env.GPM_GITHUB_API_URL || "https://api.github.com";
+    const token = process.env.GPM_GITHUB_TOKEN || process.env.GH_TOKEN || "";
+    if (!token) throw new Error("GitHub API requires GPM_GITHUB_TOKEN or GH_TOKEN");
+    const response = await fetch(`${apiUrl.replace(/\/$/, "")}${endpoint}`, { method, headers: { "Accept": "application/vnd.github+json", "Content-Type": "application/json", "User-Agent": "git-based-project-management", "X-GitHub-Api-Version": "2022-11-28", "Authorization": `Bearer ${token}` }, body: body ? JSON.stringify(body) : undefined });
+    const text = await response.text();
+    if (!response.ok) throw new Error(`GitHub API ${response.status}: ${text}`);
+    return text ? JSON.parse(text) : {};
+  }
+  const gitlabUrl = process.env.GPM_GITLAB_URL || "";
+  const token = process.env.GPM_GITLAB_TOKEN || "";
+  if (!gitlabUrl || !token) throw new Error("GitLab API requires GPM_GITLAB_URL and GPM_GITLAB_TOKEN");
+  const response = await fetch(`${gitlabUrl.replace(/\/$/, "")}${endpoint}`, { method, headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": token }, body: body ? JSON.stringify(body) : undefined });
   const text = await response.text();
   if (!response.ok) throw new Error(`GitLab API ${response.status}: ${text}`);
   return text ? JSON.parse(text) : {};
 }
 
-async function gitlabProposal(title, message, actions) {
-  const registry = await loadRegistry();
-  const projectPath = process.env.PROJECT_OS_GITLAB_PROJECT || registry.gitlab?.project_path || "";
-  if (!projectPath) throw new Error("GitLab MR mode requires PROJECT_OS_GITLAB_PROJECT");
-  const targetBranch = process.env.PROJECT_OS_TARGET_BRANCH || registry.gitlab?.default_branch || "main";
-  const sourceBranch = `project-os/${slugify(title).slice(0, 48)}-${Date.now()}`;
-  const encodedProject = encodeURIComponent(projectPath);
-  const commit = await gitlabApi("POST", `/api/v4/projects/${encodedProject}/repository/commits`, {
-    branch: sourceBranch,
-    start_branch: targetBranch,
-    commit_message: message,
-    actions
-  });
-  const mr = await gitlabApi("POST", `/api/v4/projects/${encodedProject}/merge_requests`, {
-    source_branch: sourceBranch,
-    target_branch: targetBranch,
-    title,
-    description: "Created by GitLab Project OS website.",
-    remove_source_branch: true
-  });
-  return { mode: "gitlab", branch: sourceBranch, commit: commit.id || "", merge_request: mr.web_url || "" };
-}
-
-async function githubApi(method, endpoint, body) {
-  const apiUrl = process.env.PROJECT_OS_GITHUB_API_URL || "https://api.github.com";
-  const token = process.env.PROJECT_OS_GITHUB_TOKEN || process.env.GH_TOKEN || "";
-  if (!token) throw new Error("GitHub API requires PROJECT_OS_GITHUB_TOKEN or GH_TOKEN");
-  const response = await fetch(`${apiUrl.replace(/\/$/, "")}${endpoint}`, {
-    method,
-    headers: {
-      "Accept": "application/vnd.github+json",
-      "Content-Type": "application/json",
-      "User-Agent": "git-based-project-management",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Authorization": `Bearer ${token}`
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`GitHub API ${response.status}: ${text}`);
-  return text ? JSON.parse(text) : {};
-}
-
-async function githubProposal(title, message, actions) {
-  const registry = await loadRegistry();
-  const repoName = process.env.PROJECT_OS_GITHUB_REPO || registry.github?.repo || "";
-  if (!repoName) throw new Error("GitHub PR mode requires PROJECT_OS_GITHUB_REPO");
-  const targetBranch = process.env.PROJECT_OS_TARGET_BRANCH || registry.github?.default_branch || "main";
-  const sourceBranch = `project-os/${slugify(title).slice(0, 48)}-${Date.now()}`;
-  const encodedRepo = repoName.split("/").map(encodeURIComponent).join("/");
-  const ref = await githubApi("GET", `/repos/${encodedRepo}/git/ref/heads/${encodeURIComponent(targetBranch)}`);
-  await githubApi("POST", `/repos/${encodedRepo}/git/refs`, {
-    ref: `refs/heads/${sourceBranch}`,
-    sha: ref.object.sha
-  });
+async function githubProposal(registry, title, message, actions) {
+  const repoName = process.env.GPM_GITHUB_REPO || registry.github?.repo || "";
+  if (!repoName) throw new Error("GitHub PR mode requires GPM_GITHUB_REPO");
+  const target = process.env.GPM_TARGET_BRANCH || registry.github?.default_branch || "main";
+  const source = `project-hub/${slugify(title).slice(0, 48)}-${Date.now()}`;
+  const encoded = repoName.split("/").map(encodeURIComponent).join("/");
+  const ref = await providerApi("github", "GET", `/repos/${encoded}/git/ref/heads/${encodeURIComponent(target)}`);
+  await providerApi("github", "POST", `/repos/${encoded}/git/refs`, { ref: `refs/heads/${source}`, sha: ref.object.sha });
   for (const action of actions) {
-    const endpoint = `/repos/${encodedRepo}/contents/${action.file_path.split("/").map(encodeURIComponent).join("/")}`;
+    const endpoint = `/repos/${encoded}/contents/${action.file_path.split("/").map(encodeURIComponent).join("/")}`;
     let sha = undefined;
     if (action.action === "update") {
       try {
-        const existing = await githubApi("GET", `${endpoint}?ref=${encodeURIComponent(sourceBranch)}`);
-        sha = existing.sha;
+        sha = (await providerApi("github", "GET", `${endpoint}?ref=${encodeURIComponent(source)}`)).sha;
       } catch {
         sha = undefined;
       }
     }
-    await githubApi("PUT", endpoint, {
-      message,
-      content: Buffer.from(action.content, "utf8").toString("base64"),
-      branch: sourceBranch,
-      ...(sha ? { sha } : {})
-    });
+    await providerApi("github", "PUT", endpoint, { message, content: Buffer.from(action.content, "utf8").toString("base64"), branch: source, ...(sha ? { sha } : {}) });
   }
-  const pr = await githubApi("POST", `/repos/${encodedRepo}/pulls`, {
-    title,
-    head: sourceBranch,
-    base: targetBranch,
-    body: "Created by Git-Based Project Management website."
-  });
-  return { mode: "github", branch: sourceBranch, pull_request: pr.html_url || "" };
+  const pr = await providerApi("github", "POST", `/repos/${encoded}/pulls`, { title, head: source, base: target, body: "Created by Git-Based Project Management website." });
+  return { mode: "github", branch: source, pull_request: pr.html_url || "" };
+}
+
+async function gitlabProposal(registry, title, message, actions) {
+  const projectPath = process.env.GPM_GITLAB_PROJECT || registry.gitlab?.project_path || "";
+  if (!projectPath) throw new Error("GitLab MR mode requires GPM_GITLAB_PROJECT");
+  const target = process.env.GPM_TARGET_BRANCH || registry.gitlab?.default_branch || "main";
+  const source = `project-hub/${slugify(title).slice(0, 48)}-${Date.now()}`;
+  const encoded = encodeURIComponent(projectPath);
+  await providerApi("gitlab", "POST", `/api/v4/projects/${encoded}/repository/commits`, { branch: source, start_branch: target, commit_message: message, actions });
+  const mr = await providerApi("gitlab", "POST", `/api/v4/projects/${encoded}/merge_requests`, { source_branch: source, target_branch: target, title, description: "Created by Git-Based Project Management website.", remove_source_branch: true });
+  return { mode: "gitlab", branch: source, merge_request: mr.web_url || "" };
 }
 
 async function handleProposal(payload) {
+  const registry = await loadRegistry();
   const { title, message, actions } = await proposalActions(payload);
-  const live = process.env.PROJECT_OS_LIVE_PROPOSALS === "1" || process.env.PROJECT_OS_LIVE_PROPOSALS === "true";
-  const provider = (process.env.PROJECT_OS_PROVIDER || "").toLowerCase();
-  if (live && provider === "github") return githubProposal(title, message, actions);
-  if (live && provider === "gitlab") return gitlabProposal(title, message, actions);
-  if (process.env.PROJECT_OS_GITLAB_MR === "1" || process.env.PROJECT_OS_GITLAB_MR === "true") return gitlabProposal(title, message, actions);
+  const live = ["1", "true"].includes(String(process.env.GPM_LIVE_PROPOSALS || "").toLowerCase());
+  const provider = (process.env.GPM_PROVIDER || registry.provider || "").toLowerCase();
+  if (live && provider === "github") return githubProposal(registry, title, message, actions);
+  if (live && provider === "gitlab") return gitlabProposal(registry, title, message, actions);
   return localProposal(title, message, actions);
 }
 
@@ -479,7 +357,6 @@ function contentType(filePath) {
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
   if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".svg")) return "image/svg+xml";
-  if (filePath.endsWith(".json")) return "application/json; charset=utf-8";
   return "application/octet-stream";
 }
 
@@ -499,18 +376,9 @@ async function readRequestJson(req) {
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    if (req.method === "GET" && url.pathname === "/healthz") {
-      sendJson(res, 200, { ok: true, repo: REPO, runtime: "node" });
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/api/data") {
-      sendJson(res, 200, await compileData());
-      return;
-    }
-    if (req.method === "POST" && url.pathname === "/api/proposals") {
-      sendJson(res, 200, await handleProposal(await readRequestJson(req)));
-      return;
-    }
+    if (req.method === "GET" && url.pathname === "/healthz") return sendJson(res, 200, { ok: true, repo: REPO, runtime: "node" });
+    if (req.method === "GET" && url.pathname === "/api/data") return sendJson(res, 200, await compileData());
+    if (req.method === "POST" && url.pathname === "/api/proposals") return sendJson(res, 200, await handleProposal(await readRequestJson(req)));
     if (req.method === "GET") {
       const requestPath = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/static\//, "");
       const filePath = safeStaticPath(requestPath);
@@ -526,7 +394,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Project OS website listening on http://${HOST}:${PORT}/`);
+  console.log(`Project website listening on http://${HOST}:${PORT}/`);
   console.log(`Repo: ${REPO}`);
-  console.log(`Proposal mode: ${process.env.PROJECT_OS_LIVE_PROPOSALS ? `${process.env.PROJECT_OS_PROVIDER || "live"} PR/MR` : "dry-run"}`);
+  console.log(`Proposal mode: ${process.env.GPM_LIVE_PROPOSALS ? `${process.env.GPM_PROVIDER || "live"} PR/MR` : "dry-run"}`);
 });

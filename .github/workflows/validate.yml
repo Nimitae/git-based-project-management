@@ -21,7 +21,7 @@ jobs:
           node-version: "22"
 
       - name: Python syntax
-        run: python -m py_compile scripts/project_os.py scripts/smoke_test.py scripts/node_website_smoke_test.py
+        run: python -m py_compile scripts/git_pm.py scripts/smoke_test.py scripts/node_website_smoke_test.py
 
       - name: Node syntax
         run: |
@@ -35,4 +35,4 @@ jobs:
         run: python scripts/node_website_smoke_test.py
 
       - name: Docker build
-        run: docker build -t project-os-website:test assets/website
+        run: docker build -t project-hub-website:test assets/website

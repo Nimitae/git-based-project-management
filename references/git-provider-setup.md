@@ -6,7 +6,7 @@ The installer should probe for:
 
 - Provider: `github` or `gitlab`.
 - GitHub repository path such as `owner/git-based-project-management`.
-- GitLab project path such as `group/subgroup/project-os`.
+- GitLab project path such as `group/subgroup/project-hub`.
 - Local clone path.
 - User role: owner, manager, assignee, reviewer, or installer.
 - Token availability.
@@ -26,10 +26,10 @@ For fine-grained tokens:
 Environment variables:
 
 ```powershell
-$env:PROJECT_OS_PROVIDER = "github"
-$env:PROJECT_OS_GITHUB_REPO = "owner/git-based-project-management"
-$env:PROJECT_OS_GITHUB_TOKEN = "<token>"
-$env:PROJECT_OS_GITHUB_API_URL = "https://api.github.com"
+$env:GPM_PROVIDER = "github"
+$env:GPM_GITHUB_REPO = "owner/git-based-project-management"
+$env:GPM_GITHUB_TOKEN = "<token>"
+$env:GPM_GITHUB_API_URL = "https://api.github.com"
 ```
 
 ## GitLab Token Scopes
@@ -43,13 +43,13 @@ For GitLab:
 Environment variables:
 
 ```powershell
-$env:PROJECT_OS_PROVIDER = "gitlab"
-$env:PROJECT_OS_GITLAB_TOKEN = "<token>"
-$env:PROJECT_OS_GITLAB_URL = "https://gitlab.garena.com"
-$env:PROJECT_OS_GITLAB_PROJECT = "group/project-os"
+$env:GPM_PROVIDER = "gitlab"
+$env:GPM_GITLAB_TOKEN = "<token>"
+$env:GPM_GITLAB_URL = "https://gitlab.garena.com"
+$env:GPM_GITLAB_PROJECT = "group/project-hub"
 ```
 
-Do not commit tokens. `.project-os/local.json` may store non-secret local defaults only.
+Do not commit tokens. `.project-hub/local.json` may store non-secret local defaults only.
 
 ## Protected Branches
 
@@ -65,8 +65,8 @@ Protect the default branch:
 At minimum, CI should run:
 
 ```powershell
-python scripts/project_os.py validate --repo .
-python scripts/project_os.py compile --repo .
+python scripts/git_pm.py validate --repo .
+python scripts/git_pm.py compile --repo .
 ```
 
 If the skill is vendored in a separate path, adapt the script path accordingly.
@@ -78,7 +78,7 @@ Deploy the website as one of:
 - Internal VM/container running the Node.js runtime in `assets/website`.
 - Docker image built from `assets/website/Dockerfile`.
 - Static host serving generated data plus a separate API service for write proposals.
-- Local Python preview through `project_os.py website`.
+- Local Python preview through `git_pm.py website`.
 - Developer local server for small-team use.
 
 The write path needs a backend with a provider token. A fully static deployment can read compiled data, but it cannot create PRs/MRs without an API service.
@@ -86,33 +86,33 @@ The write path needs a backend with a provider token. A fully static deployment 
 Node.js container example:
 
 ```powershell
-docker build -t project-os-website assets\website
-docker run --rm -p 8787:8787 -e PROJECT_OS_REPO=/data/project-os -v "C:\path\to\project-os:/data/project-os" project-os-website
+docker build -t project-hub-website assets\website
+docker run --rm -p 8787:8787 -e GPM_REPO=/data/project-hub -v "C:\path\to\project-hub:/data/project-hub" project-hub-website
 ```
 
 GitHub PR mode:
 
 ```powershell
 docker run --rm -p 8787:8787 `
-  -e PROJECT_OS_REPO=/data/project-os `
-  -e PROJECT_OS_PROVIDER=github `
-  -e PROJECT_OS_LIVE_PROPOSALS=1 `
-  -e PROJECT_OS_GITHUB_REPO=owner/git-based-project-management `
-  -e PROJECT_OS_GITHUB_TOKEN=<token> `
-  -v "C:\path\to\project-os:/data/project-os" `
-  project-os-website
+  -e GPM_REPO=/data/project-hub `
+  -e GPM_PROVIDER=github `
+  -e GPM_LIVE_PROPOSALS=1 `
+  -e GPM_GITHUB_REPO=owner/git-based-project-management `
+  -e GPM_GITHUB_TOKEN=<token> `
+  -v "C:\path\to\project-hub:/data/project-hub" `
+  project-hub-website
 ```
 
 GitLab MR mode:
 
 ```powershell
 docker run --rm -p 8787:8787 `
-  -e PROJECT_OS_REPO=/data/project-os `
-  -e PROJECT_OS_PROVIDER=gitlab `
-  -e PROJECT_OS_LIVE_PROPOSALS=1 `
-  -e PROJECT_OS_GITLAB_URL=https://gitlab.garena.com `
-  -e PROJECT_OS_GITLAB_PROJECT=group/project-os `
-  -e PROJECT_OS_GITLAB_TOKEN=<token> `
-  -v "C:\path\to\project-os:/data/project-os" `
-  project-os-website
+  -e GPM_REPO=/data/project-hub `
+  -e GPM_PROVIDER=gitlab `
+  -e GPM_LIVE_PROPOSALS=1 `
+  -e GPM_GITLAB_URL=https://gitlab.garena.com `
+  -e GPM_GITLAB_PROJECT=group/project-hub `
+  -e GPM_GITLAB_TOKEN=<token> `
+  -v "C:\path\to\project-hub:/data/project-hub" `
+  project-hub-website
 ```

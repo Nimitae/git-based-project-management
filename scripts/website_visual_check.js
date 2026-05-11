@@ -3,7 +3,7 @@ const { chromium } = require("playwright");
 
 async function main() {
   const url = process.argv[2] || "http://127.0.0.1:8787/";
-  const output = process.argv[3] || "project-os-website.png";
+  const output = process.argv[3] || "project-hub-website.png";
   let browser;
   const attempts = [
     { headless: true },

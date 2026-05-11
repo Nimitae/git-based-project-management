@@ -8,7 +8,7 @@ COPY static ./static
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=8787
-ENV PROJECT_OS_REPO=/data/project-os
+ENV GPM_REPO=/data/project-hub
 
 EXPOSE 8787
 

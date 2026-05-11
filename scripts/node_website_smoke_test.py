@@ -7,14 +7,16 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import time
-from urllib import request
+from urllib import error, request
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-CONTROLLER = SKILL_ROOT / "scripts" / "project_os.py"
+CONTROLLER = SKILL_ROOT / "scripts" / "git_pm.py"
 WEBSITE_DIR = SKILL_ROOT / "assets" / "website"
 
 
@@ -45,25 +47,35 @@ def http_json(url: str, body: dict | None = None) -> dict:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
     req = request.Request(url, data=data, headers=headers)
-    with request.urlopen(req, timeout=10) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} from {url}: {body}") from exc
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def main() -> int:
     node = find_node()
-    root = (Path.cwd() / ".project-os-node-smoke").resolve()
-    if root.exists():
-        shutil.rmtree(root, ignore_errors=True)
-    root.mkdir(parents=True, exist_ok=True)
-    repo = root / "demo-os"
+    root = Path(tempfile.mkdtemp(prefix="gpm-node-smoke-")).resolve()
+    repo = root / "demo-hub"
     server = None
     try:
-        run([sys.executable, str(CONTROLLER), "init", "--repo", str(repo), "--name", "Node Demo OS", "--owner", "Terence"])
+        run([sys.executable, str(CONTROLLER), "init", "--repo", str(repo), "--name", "Node Demo Hub", "--owner", "Terence"])
         run([sys.executable, str(CONTROLLER), "validate", "--repo", str(repo)])
+        port = free_port()
         env = os.environ.copy()
-        env["PROJECT_OS_REPO"] = str(repo)
+        for key in ["GPM_LIVE_PROPOSALS", "GPM_PROVIDER", "GPM_GITHUB_REPO", "GPM_GITHUB_TOKEN", "GPM_GITLAB_PROJECT", "GPM_GITLAB_TOKEN"]:
+            env.pop(key, None)
+        env["GPM_REPO"] = str(repo)
         env["HOST"] = "127.0.0.1"
-        env["PORT"] = "8798"
+        env["PORT"] = str(port)
         server = subprocess.Popen(
             [node, "server.mjs"],
             cwd=str(WEBSITE_DIR),
@@ -72,11 +84,11 @@ def main() -> int:
             stderr=subprocess.PIPE,
             env=env,
         )
-        base = "http://127.0.0.1:8798"
+        base = f"http://127.0.0.1:{port}"
         for _ in range(50):
             try:
                 health = http_json(base + "/healthz")
-                if health.get("ok") and health.get("runtime") == "node":
+                if health.get("ok") and health.get("runtime") == "node" and Path(health.get("repo", "")).resolve() == repo:
                     break
             except Exception:
                 time.sleep(0.2)
@@ -90,7 +102,7 @@ def main() -> int:
             base + "/api/proposals",
             {
                 "type": "create_task",
-                "ew_id": "EW1",
+                "project_id": "PROJ1",
                 "title": "Node smoke-test proposed task",
                 "assigned_to": "Terence",
                 "role": "PM",

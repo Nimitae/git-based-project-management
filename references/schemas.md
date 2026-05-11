@@ -3,139 +3,131 @@
 ## Repository Layout
 
 ```text
-project-os/
-  registry.yaml
-  initiatives/
-    INIT1.md
-  projects/
-    PROJ1/
-      project.md
-      ews/
-        EW1.md
-      tasks/
-        TASK1.yaml
-  assets/
-    assets.yaml
-  policies/
-    output-requirements.yaml
-  events/
-    task-events.jsonl
-  reviews/
-    task-reviews.jsonl
-  .project-os/
-    site-data/
-      project-os.json
+registry.yaml
+README.md
+projects/
+  PROJ1-sample-game/
+    README.md
+    project.yaml
+    tasks/
+      TASK1.yaml
+    docs/
+      proposals/
+      design/
+      reports/
+      production/
+      release/
+      notes/
+    assets/
+      assets.yaml
+templates/
+events/
+  task-events.jsonl
+reviews/
+  task-reviews.jsonl
+policies/
+  output-requirements.yaml
 ```
 
-`registry.yaml`, task files, asset manifests, and policy files use JSON-subset YAML by default. This keeps them valid YAML and lets the bundled controller validate them without external dependencies.
+`registry.yaml`, task files, project files, and policy files use JSON-subset YAML by default. This keeps them easy for agents to parse without extra dependencies while remaining readable.
 
 ## Registry
-
-`registry.yaml` owns ID allocation and relationships.
 
 Required top-level fields:
 
 - `schema_version`
+- `name`
+- `provider`
+- `github`
 - `gitlab`
 - `next_ids`
 - `people`
-- `entities.initiatives`
-- `entities.projects`
-- `entities.ews`
-- `entities.tasks`
+- `projects`
+- `tasks`
+- `docs`
+- `assets`
 
-Do not hand-copy IDs between files. Use the controller or website backend to allocate IDs, then run validation.
+## Project
 
-## Markdown Documents
-
-Initiative, project, and EW documents use frontmatter for machine-readable identity:
-
-```markdown
----
-id: EW1
-type: ew
-project_id: PROJ1
-initiative_id: INIT1
-owner: Terence
-status: Running
----
-
-# EW1 - Project Setup
+```json
+{
+  "id": "PROJ1",
+  "slug": "sample-game",
+  "name": "Sample Game",
+  "type": "game",
+  "status": "Active",
+  "owners": ["Terence"],
+  "summary": "Short project summary.",
+  "path": "projects/PROJ1-sample-game/project.yaml",
+  "readme": "projects/PROJ1-sample-game/README.md",
+  "repos": [
+    {
+      "name": "game-client",
+      "provider": "github",
+      "url": "https://github.com/org/game-client",
+      "default_branch": "main",
+      "role": "implementation"
+    }
+  ]
+}
 ```
 
-The frontmatter should match `registry.yaml`. The body should contain human/agent-readable sections:
-
-- Summary
-- Goals
-- Scope
-- Acceptance Criteria
-- Decisions
-- Risks
-- Open Questions
-- Linked Tasks
-- Change Log
-
-## Task Spec
-
-Task files are JSON-subset YAML:
+## Task
 
 ```json
 {
   "id": "TASK1",
-  "ew_id": "EW1",
   "project_id": "PROJ1",
-  "title": "Confirm Project OS setup",
-  "assigned_to": "Terence",
-  "role": "PM",
+  "title": "Implement tutorial analytics",
+  "assigned_to": "Kenneth",
+  "role": "Eng",
   "status": "Backlog",
   "checkpoint": "Drafting",
   "deadline": "",
-  "expected_output": "Setup Confirmation",
-  "acceptance_criteria": [
-    "Repository validates",
-    "Website loads locally"
-  ],
+  "expected_output": "Pull Request",
+  "acceptance_criteria": ["Events are documented", "Tests pass"],
   "dependencies": [],
-  "target_repo": "",
+  "target_repo": "game-client",
   "output": "",
   "ai_update": "",
   "user_update": ""
 }
 ```
 
-## Events
+## Document
 
-Append execution updates to `events/task-events.jsonl`:
+Documents are Markdown with frontmatter:
 
-```json
-{"event_id":"EVENT1","task_id":"TASK1","actor":"Terence","event_type":"blocked","message":"Waiting on access","created_at":"2026-05-10T10:00:00+08:00"}
-```
+```markdown
+---
+id: DOC1
+project_id: PROJ1
+type: playtest-report
+owner: Samantha
+status: draft
+---
 
-## Reviews
-
-Append review decisions to `reviews/task-reviews.jsonl`:
-
-```json
-{"review_id":"REVIEW1","task_id":"TASK1","reviewer":"Terence","decision":"revise","reasons":["Missing setup proof"],"created_at":"2026-05-10T10:00:00+08:00"}
+# DOC1 - First Playtest Report
 ```
 
 ## Assets
 
-Register every durable image, video, build, design, or deck in `assets/assets.yaml`:
+Use project-level asset manifests for durable asset tracking:
 
 ```json
 {
   "assets": {
     "ASSET1": {
-      "title": "FTUE reference",
-      "type": "image",
-      "storage": "git_lfs",
-      "path": "assets/ASSET1.png",
-      "source_url": "",
-      "used_by": ["EW1"]
+      "title": "Prototype gameplay capture",
+      "type": "video",
+      "storage": "github-release",
+      "path": "",
+      "source_url": "https://...",
+      "used_by": ["PROJ1", "TASK1", "DOC1"],
+      "owner": "Celine"
     }
   }
 }
 ```
 
-Use Git or Git LFS for small previews. Use GitLab Releases/Packages, object storage, Figma, or implementation repos for large binaries.
+Small previews may live in Git or Git LFS. Large builds, videos, source art, and captures should live in releases/packages/object storage or the relevant implementation repo.

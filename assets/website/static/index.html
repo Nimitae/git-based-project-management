@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Project OS</title>
+    <title>Project Hub</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <img src="/static/project-os-mark.svg" alt="" />
+          <img src="/static/project-hub-mark.svg" alt="" />
           <div>
-            <strong>Project OS</strong>
+            <strong>Project Hub</strong>
             <span id="repoLabel">Git-backed workspace</span>
           </div>
         </div>
@@ -44,7 +44,7 @@
         <section class="view active" id="dashboardView">
           <div class="metric-grid">
             <div class="metric"><span>Projects</span><strong id="projectCount">0</strong></div>
-            <div class="metric"><span>Workstreams</span><strong id="ewCount">0</strong></div>
+            <div class="metric"><span>Documents</span><strong id="docCount">0</strong></div>
             <div class="metric"><span>Open Tasks</span><strong id="openTaskCount">0</strong></div>
             <div class="metric"><span>Validation</span><strong id="issueCount">0</strong></div>
           </div>
@@ -112,27 +112,27 @@
           <div class="proposal-grid">
             <section class="panel">
               <div class="panel-header">
-                <h2>Create Task MR</h2>
+                <h2>Create Task PR/MR</h2>
               </div>
               <form id="createTaskForm" class="form-stack">
-                <label>EW ID <input name="ew_id" placeholder="EW1" required /></label>
+                <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
                 <label>Title <input name="title" placeholder="Draft concept doc" required /></label>
                 <label>Assigned To <input name="assigned_to" placeholder="Samantha" required /></label>
                 <label>Role <input name="role" placeholder="PM" /></label>
                 <label>Expected Output <input name="expected_output" placeholder="Design Doc" required /></label>
-                <button type="submit">Create MR Proposal</button>
+                <button type="submit">Create PR/MR Proposal</button>
               </form>
             </section>
 
             <section class="panel">
               <div class="panel-header">
-                <h2>Edit File MR</h2>
+                <h2>Edit File PR/MR</h2>
               </div>
               <form id="editFileForm" class="form-stack">
-                <label>Path <input name="path" placeholder="projects/PROJ1/ews/EW1.md" required /></label>
-                <label>Commit Message <input name="message" placeholder="Update EW1 scope" required /></label>
+                <label>Path <input name="path" placeholder="projects/PROJ1-sample-game/docs/design/DOC2-core-loop.md" required /></label>
+                <label>Commit Message <input name="message" placeholder="Update project scope" required /></label>
                 <label>Content <textarea name="content" rows="9" required></textarea></label>
-                <button type="submit">Create MR Proposal</button>
+                <button type="submit">Create PR/MR Proposal</button>
               </form>
             </section>
           </div>

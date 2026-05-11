@@ -1,9 +1,9 @@
 {
-  "name": "project-os-website",
+  "name": "project-hub-website",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Node.js website runtime for GitLab Project OS.",
+  "description": "Node.js website runtime for Git-based project management.",
   "engines": {
     "node": ">=20"
   },
