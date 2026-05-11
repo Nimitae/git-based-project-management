@@ -237,6 +237,13 @@ textarea {
   color: var(--muted);
 }
 
+.panel > h3 {
+  margin: 14px 14px 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
 .table-wrap {
   overflow: auto;
 }

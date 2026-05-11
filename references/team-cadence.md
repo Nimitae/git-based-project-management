@@ -17,6 +17,7 @@ The project manager:
 - Runs `git_pm.py project-status --repo .`.
 - Reviews blocked tasks.
 - Reviews the website review queue.
+- Reviews repo verification gaps for missing target repos or output commits.
 - Checks new PR/MR proposals for task, doc, asset, milestone, and policy changes.
 - Checks active feature proposals before creating execution tasks.
 
@@ -57,6 +58,7 @@ Completed tasks, finalized notes, archived reports, event logs, and review logs 
 Before marking work `Done` or `Verified`:
 
 - Confirm every task has output, acceptance criteria, and approved review.
+- Confirm code tasks have registered `target_repo` and verifiable `output_commit`.
 - Confirm objective checks can access the output.
 - Confirm failed or withdrawn attempts are recorded.
 - Confirm live docs match shipped terminology and scope.
@@ -67,5 +69,5 @@ Before marking work `Done` or `Verified`:
 Use this prompt pattern when asking an agent to inspect project health:
 
 ```text
-Pull the latest Project Hub repo. Read registry.yaml, the project README, roadmap, active milestones, live docs, task folders, events, reviews, and the review queue. Report blockers, stale review items, failed verification, missing outputs, terminology drift, and PR/MR proposals that need human decision. Do not use Git Issues; use Git files and PR/MR state only.
+Pull the latest Project Hub repo. Read registry.yaml, the project README, roadmap, active milestones, live docs, task folders, events, reviews, the review queue, and repo_state_unknown. Report blockers, stale review items, failed verification, missing outputs, missing target repos/output commits, terminology drift, and PR/MR proposals that need human decision. Do not use Git Issues; use Git files and PR/MR state only.
 ```

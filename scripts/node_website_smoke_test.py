@@ -101,7 +101,7 @@ def main() -> int:
             raise RuntimeError("Node website returned no tasks")
         if not data.get("search_index"):
             raise RuntimeError("Node website returned no search index")
-        if "blocked_tasks" not in data or "stale_work" not in data or "feature_proposals" not in data:
+        if "blocked_tasks" not in data or "stale_work" not in data or "feature_proposals" not in data or "repo_state_unknown" not in data:
             raise RuntimeError("Node website did not return project health collections")
         proposal = http_json(
             base + "/api/proposals",
@@ -112,6 +112,19 @@ def main() -> int:
                 "assigned_to": "Terence",
                 "role": "PM",
                 "expected_output": "Setup Confirmation",
+                "target_repo": "",
+            },
+        )
+        repo_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "register_repo",
+                "project_id": "PROJ1",
+                "name": "game-client",
+                "provider": "github",
+                "url": "https://github.com/example/game-client",
+                "default_branch": "main",
+                "role": "client/gameplay",
             },
         )
         milestone_proposal = http_json(
@@ -166,6 +179,8 @@ def main() -> int:
                 "task_id": "TASK1",
                 "actor": "Terence",
                 "output": "https://example.com/node-attempt",
+                "target_repo": "game-client",
+                "output_commit": "0123456789abcdef0123456789abcdef01234567",
                 "message": "Node attempt ready",
             },
         )
@@ -217,6 +232,8 @@ def main() -> int:
             raise RuntimeError(f"doc proposal directory was not created: {doc_proposal}")
         if not Path(feature_proposal.get("proposal_dir", "")).exists():
             raise RuntimeError(f"feature proposal directory was not created: {feature_proposal}")
+        if not Path(repo_proposal.get("proposal_dir", "")).exists():
+            raise RuntimeError(f"repo proposal directory was not created: {repo_proposal}")
         for name, row in {
             "attempt": attempt_proposal,
             "failed": failed_proposal,

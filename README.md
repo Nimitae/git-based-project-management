@@ -49,7 +49,7 @@ reviews/
 policies/
 ```
 
-Implementation code, game builds, websites, tools, and services can stay in their own GitHub or GitLab repositories. The management repo stores links, task intent, decisions, reviews, and project state.
+Implementation code, game builds, websites, tools, and services can stay in their own GitHub or GitLab repositories. The management repo stores links, task intent, decisions, reviews, and project state. Each project should list its implementation repos in `project.yaml`; implementation tasks point to those repos with `target_repo` and record `output_commit` so reviewers can confirm the exact commit exists.
 
 ## Quick Start
 
@@ -135,8 +135,8 @@ python scripts/node_website_smoke_test.py
 - Owners propose new features with `propose-feature`; accepted proposals are decomposed into milestones, tasks, docs, and linked implementation repo work.
 - New tasks live in task folders with `task.yaml`, `notes.md`, `outputs.md`, and `attachments/`.
 - Agents can answer day-to-day questions with `my-tasks`, `project-status`, `review-queue`, `blocked-tasks`, and `stale-work`.
-- Day-to-day task updates use `update-task`, `add-event`, `record-attempt`, `record-verification-failed`, `withdraw-output`, `supersede-output`, `cancel-review`, `submit-output`, `review-task`, and `register-asset`.
-- `submit-output` moves work to `In Review`; `Done` and `Verified` require output plus an approved review record.
+- Day-to-day task updates use `update-task`, `add-event`, `record-attempt`, `record-verification-failed`, `withdraw-output`, `supersede-output`, `cancel-review`, `submit-output`, `review-task`, `register-repo`, and `register-asset`.
+- `record-attempt` is preferred for completion attempts; `submit-output` is the short submission path. `Done` and `Verified` require output, output commit for code tasks, acceptance criteria, and an approved review record.
 - Every attempt to complete work should leave an append-only event or review record, even when the output is rejected, withdrawn, superseded, or review is cancelled.
 - Meeting minutes, project notes, weekly updates, risk logs, retros, and decisions are first-class documents created with `create-doc`.
 - Live docs should be updated when terminology or scope changes; completed tasks and finalized records should stay historical.

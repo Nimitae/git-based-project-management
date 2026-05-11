@@ -34,6 +34,18 @@ async function main() {
   if (metrics < 4) {
     throw new Error(`Expected 4 metrics, found ${metrics}`);
   }
+  await page.getByRole("button", { name: "My Work" }).click();
+  if (await page.locator("#myAssignedList").count() !== 1 || await page.locator("#myReviewList").count() !== 1) {
+    throw new Error("My Work split panels were not found");
+  }
+  await page.getByRole("button", { name: "Health" }).click();
+  if (await page.locator("#repoStateUnknownList").count() !== 1) {
+    throw new Error("Repo verification gap panel was not found");
+  }
+  await page.getByRole("button", { name: "Create" }).click();
+  if (await page.locator("#registerRepoForm").count() !== 1) {
+    throw new Error("Register Repo form was not found");
+  }
   await browser.close();
   console.log(JSON.stringify({ ok: true, url, output, metrics }, null, 2));
 }

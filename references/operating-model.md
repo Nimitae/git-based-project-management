@@ -12,7 +12,7 @@ Use this lifecycle for work that produces code, docs, assets, builds, videos, re
 6. `Verified`: completed work that has passed the required verification gate.
 7. `Iceboxed`: intentionally paused or closed without completion.
 
-Do not skip from `In Progress` to `Done` unless the same PR/MR includes an accessible output and an approved review record. The preferred path is `record-attempt` or `submit-output`, which moves work to `In Review`, followed by `review-task`.
+Do not skip from `In Progress` to `Done` unless the same PR/MR includes an accessible output, an output commit for code tasks, acceptance criteria, and an approved review record. The preferred path is `record-attempt` or `submit-output`, which moves work to `In Review`, followed by `review-task`.
 
 ## Verification Rule
 

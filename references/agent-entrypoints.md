@@ -17,7 +17,8 @@ git_pm.py my-tasks --repo . --user "<name>"
 - `notes.md`
 - `outputs.md`
 - linked docs
-- linked implementation repo from `target_repo`
+- linked implementation repo from `target_repo`, resolved through the project `repos` list
+- `output_commit` when the task output is code
 - recent events and reviews for that task
 
 4. Report:
@@ -53,7 +54,8 @@ After the proposal is approved, create milestones and tasks:
 
 ```powershell
 git_pm.py create-milestone --repo . --project-id PROJ1 --title "Feature Milestone" --owner "Maya"
-git_pm.py create-task --repo . --project-id PROJ1 --title "Implement client events" --assigned-to "Paul" --role "Programmer" --expected-output "Pull Request"
+git_pm.py register-repo --repo . --project-id PROJ1 --name game-client --provider github --url "https://github.com/example/game-client" --default-branch main --role "client/gameplay"
+git_pm.py create-task --repo . --project-id PROJ1 --title "Implement client events" --assigned-to "Paul" --role "Programmer" --expected-output "Pull Request" --target-repo "game-client"
 ```
 
 ## Manager Wants Project Health
@@ -76,6 +78,7 @@ Report:
 - review queue
 - failed verification
 - active feature proposals
+- repo verification gaps from compiled `repo_state_unknown`
 - validation/document audit issues
 - decisions needed
 
@@ -91,8 +94,9 @@ For each item:
 
 1. Open the task folder.
 2. Open the output link.
-3. Run objective checks where possible.
-4. Choose one:
+3. If this is code output, resolve `target_repo` through the project `repos` list and verify `output_commit` exists in that implementation repo.
+4. Run objective checks where possible.
+5. Choose one:
 
 ```powershell
 git_pm.py review-task --repo . --task-id TASK# --reviewer "Name" --decision approved --notes "Accepted."
@@ -107,4 +111,3 @@ git_pm.py record-verification-failed --repo . --task-id TASK# --reviewer "Name" 
 - Releases/packages/object storage: large builds, videos, captures, source art, model files, datasets.
 - Website: human interface over Git state, not the canonical database.
 - PRs/MRs: approval and audit path for durable changes.
-

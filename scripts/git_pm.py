@@ -472,6 +472,7 @@ def make_task(task_id: str, project_id: str, project_name: str, title: str, assi
         "dependencies": [],
         "target_repo": "",
         "output": "",
+        "output_commit": "",
         "blocker": "",
         "ai_update": "",
         "user_update": "",
@@ -491,6 +492,8 @@ def make_task(task_id: str, project_id: str, project_name: str, title: str, assi
         "milestone": "",
         "feature_area": "",
         "expected_output": expected_output,
+        "target_repo": "",
+        "output_commit": "",
     }
     return path, task, ref
 
@@ -713,6 +716,7 @@ If a reviewer asks what needs review:
 
 - Run `git_pm.py review-queue --repo .`.
 - For each item, verify objective output access before approving.
+- For code output, resolve `target_repo` through the project `repos` list and confirm `output_commit` exists in that implementation repo.
 - Use `record-verification-failed`, `review-task --decision changes_requested`, or `review-task --decision approved`.
 
 ## Rules
@@ -844,6 +848,7 @@ def default_definition_of_done_policy() -> dict:
         "schema_version": 1,
         "done_requires": ["output", "acceptance_criteria", "approved_review"],
         "verified_requires": ["output", "acceptance_criteria", "approved_review"],
+        "code_output_requires": ["target_repo", "output_commit"],
         "attempt_events": ["submitted_output", "output_attempted", "verification_failed", "output_withdrawn", "output_superseded", "review_cancelled"],
         "objective_failures_block_merge": True,
         "subjective_failures_create_review": True,
@@ -987,7 +992,7 @@ Use `policies/terminology.yaml` for terminology changes that should be enforced 
 
 ## Tasks
 
-Every task should have an owner, status, expected output, acceptance criteria, and an output link before it can be verified.
+Every task should have an owner, status, expected output, acceptance criteria, and an output link before it can be verified. Code tasks should also have a `target_repo` listed in project `repos` and an `output_commit` for the reviewer to confirm.
 
 Use one folder per task:
 
@@ -998,7 +1003,7 @@ Use one folder per task:
 
 Use `events/task-events.jsonl` for daily notes and handoffs. Use task YAML for durable task state.
 
-Submitted work should move to `In Review`. Do not mark work `Done` or `Verified` unless it has an output link and an approved review record. If the output cannot be objectively accessed or checked, reject the PR/MR rather than merging an invalid completed state. The failed check or review comment is the footprint.
+Submitted work should move to `In Review`. Do not mark work `Done` or `Verified` unless it has an output link, code commit when applicable, and an approved review record. If the output cannot be objectively accessed or checked, reject the PR/MR rather than merging an invalid completed state. The failed check or review comment is the footprint.
 
 ## Assets
 
@@ -1039,6 +1044,61 @@ def approved_review_exists(reviews: list[dict], task_id: str) -> bool:
     return any(row.get("task_id") == task_id and row.get("decision") == "approved" for row in reviews)
 
 
+def normalize_repo_ref(value: str) -> str:
+    clean = (value or "").strip().rstrip("/").lower()
+    return clean[:-4] if clean.endswith(".git") else clean
+
+
+def project_repo_keys(project: dict) -> set[str]:
+    keys: set[str] = set()
+    for repo_link in project.get("repos", []) or []:
+        for field in ["name", "url"]:
+            value = normalize_repo_ref(repo_link.get(field, ""))
+            if value:
+                keys.add(value)
+    return keys
+
+
+def project_repo_matches(project: dict, target_repo: str) -> bool:
+    target = normalize_repo_ref(target_repo)
+    return bool(target) and target in project_repo_keys(project)
+
+
+def repo_state_unknown(tasks: list[dict], registry: dict) -> list[dict]:
+    rows: list[dict] = []
+    implementation_outputs = ["pull request", "merge request", "implementation pr", "implementation mr", "commit"]
+    for task in open_tasks(tasks):
+        expected = str(task.get("expected_output", "")).lower()
+        target_repo = task.get("target_repo", "")
+        needs_repo = bool(target_repo) or any(label in expected for label in implementation_outputs)
+        if not needs_repo:
+            continue
+        project = registry.get("projects", {}).get(task.get("project_id", ""), {})
+        reasons: list[str] = []
+        if not target_repo:
+            reasons.append("missing_target_repo")
+        elif not project_repo_matches(project, target_repo):
+            reasons.append("target_repo_not_registered")
+        if task.get("status") == "In Review" and task.get("output") and target_repo and not task.get("output_commit"):
+            reasons.append("missing_output_commit")
+        if reasons:
+            rows.append(
+                {
+                    "task_id": task.get("id", ""),
+                    "project_id": task.get("project_id", ""),
+                    "title": task.get("title", ""),
+                    "assigned_to": task.get("assigned_to", ""),
+                    "reviewer": task.get("reviewer", ""),
+                    "status": task.get("status", ""),
+                    "target_repo": target_repo,
+                    "output": task.get("output", ""),
+                    "output_commit": task.get("output_commit", ""),
+                    "reasons": reasons,
+                }
+            )
+    return rows
+
+
 def task_folder_from_path(path: str) -> str:
     clean = path.replace("\\", "/")
     if clean.endswith("/task.yaml"):
@@ -1075,6 +1135,10 @@ def validate_repo(repo: Path) -> list[dict]:
         if not project.get("owners"):
             issues.append(issue("warn", "PROJECT_OWNER_MISSING", f"{project_id} has no owners", project.get("path", "")))
         for repo_link in project.get("repos", []):
+            if not repo_link.get("name"):
+                issues.append(issue("warn", "PROJECT_REPO_NAME_MISSING", f"{project_id} has repo link without name", project.get("path", "")))
+            if not repo_link.get("provider"):
+                issues.append(issue("warn", "PROJECT_REPO_PROVIDER_MISSING", f"{project_id} has repo link without provider", project.get("path", "")))
             if not repo_link.get("url"):
                 issues.append(issue("warn", "PROJECT_REPO_URL_MISSING", f"{project_id} has repo link without url", project.get("path", "")))
         if project.get("roadmap") and not safe_repo_path(repo, project.get("roadmap", "")).exists():
@@ -1147,6 +1211,14 @@ def validate_repo(repo: Path) -> list[dict]:
             issues.append(issue("error", "TASK_ACCEPTANCE_MISSING", f"{task_id} is {task.get('status')} without acceptance criteria", path))
         if task.get("status") in {"Done", "Verified"} and task.get("blocker"):
             issues.append(issue("warn", "TASK_DONE_BLOCKED", f"{task_id} is {task.get('status')} but still has blocker text", path))
+        target_repo = task.get("target_repo", "")
+        project = registry.get("projects", {}).get(task.get("project_id", ""), {})
+        if target_repo and not project_repo_matches(project, target_repo):
+            issues.append(issue("warn", "TASK_TARGET_REPO_UNKNOWN", f"{task_id} target_repo {target_repo} is not listed in its project repos", path))
+        if task.get("status") == "In Review" and task.get("output") and target_repo and not task.get("output_commit"):
+            issues.append(issue("warn", "TASK_OUTPUT_COMMIT_MISSING", f"{task_id} is in review with target_repo but no output_commit", path))
+        if task.get("status") in {"Done", "Verified"} and target_repo and not task.get("output_commit"):
+            issues.append(issue("error", "TASK_OUTPUT_COMMIT_MISSING", f"{task_id} is {task.get('status')} with target_repo but no output_commit", path))
         if path.endswith("/task.yaml"):
             folder = task_folder_from_path(path)
             for rel in [f"{folder}/notes.md", f"{folder}/outputs.md", f"{folder}/attachments/README.md"]:
@@ -1368,16 +1440,18 @@ def project_status_summary(data: dict, project_id: str = "") -> dict:
     if project_id and not selected:
         return {
             "projects": [],
-            "counts": {"projects": 0, "docs": 0, "tasks": 0, "open_tasks": 0, "blocked_tasks": 0, "review_queue": 0, "stale_work": 0, "feature_proposals": 0, "validation_issues": len(data.get("validation", {}).get("issues", []))},
+            "counts": {"projects": 0, "docs": 0, "tasks": 0, "open_tasks": 0, "blocked_tasks": 0, "review_queue": 0, "stale_work": 0, "feature_proposals": 0, "repo_state_unknown": 0, "validation_issues": len(data.get("validation", {}).get("issues", []))},
             "blocked_tasks": [],
             "review_queue": [],
             "stale_work": [],
             "feature_proposals": [],
+            "repo_state_unknown": [],
         }
     selected_ids = {project.get("id") for project in selected}
     tasks = [task for task in data.get("tasks", []) if not selected_ids or task.get("project_id") in selected_ids]
     docs = [doc for doc in data.get("docs", []) if not selected_ids or doc.get("project_id") in selected_ids]
     review_queue = [row for row in data.get("review_queue", []) if any(task.get("id") == row.get("task_id") for task in tasks)]
+    repo_unknown = [row for row in data.get("repo_state_unknown", []) if any(task.get("id") == row.get("task_id") for task in tasks)]
     blocked = blocked_tasks(tasks)
     stale = stale_work(tasks, data.get("events", []))
     return {
@@ -1391,12 +1465,14 @@ def project_status_summary(data: dict, project_id: str = "") -> dict:
             "review_queue": len(review_queue),
             "stale_work": len(stale),
             "feature_proposals": len(feature_proposals(docs)),
+            "repo_state_unknown": len(repo_unknown),
             "validation_issues": len(data.get("validation", {}).get("issues", [])),
         },
         "blocked_tasks": blocked,
         "review_queue": review_queue,
         "stale_work": stale,
         "feature_proposals": feature_proposals(docs),
+        "repo_state_unknown": repo_unknown,
     }
 
 
@@ -1449,6 +1525,7 @@ def compile_data(repo: Path) -> dict:
         "blocked_tasks": blocked_tasks(tasks),
         "stale_work": stale_work(tasks, events),
         "feature_proposals": feature_proposals(docs),
+        "repo_state_unknown": repo_state_unknown(tasks, registry),
         "validation": {"issues": issues},
     }
     data["project_status"] = project_status_summary(data)
@@ -1505,6 +1582,10 @@ def cmd_project_status(args: argparse.Namespace) -> int:
             print("\nFeature Proposals:")
             for doc in summary["feature_proposals"]:
                 print(f"{doc.get('id')} [{doc.get('status')}] {doc.get('title')} owner={doc.get('owner')} path={doc.get('path')}")
+        if summary["repo_state_unknown"]:
+            print("\nRepo Verification Gaps:")
+            for row in summary["repo_state_unknown"]:
+                print(f"{row.get('task_id')} reasons={','.join(row.get('reasons', []))} target_repo={row.get('target_repo') or 'None'} output_commit={row.get('output_commit') or 'None'}")
     return 0
 
 
@@ -1652,12 +1733,15 @@ def cmd_create_project(args: argparse.Namespace) -> int:
     return 0
 
 
-def create_task_payload(registry: dict, project_id: str, title: str, assigned_to: str, role: str, expected_output: str) -> tuple[str, str, dict]:
+def create_task_payload(registry: dict, project_id: str, title: str, assigned_to: str, role: str, expected_output: str, target_repo: str = "") -> tuple[str, str, dict]:
     projects = registry.get("projects", {})
     if project_id not in projects:
         raise GitPMError(f"missing project {project_id}")
     task_id = allocate_id(registry, "task")
     path, task, ref = make_task(task_id, project_id, projects[project_id]["name"], title, assigned_to, role, expected_output)
+    if target_repo:
+        task["target_repo"] = target_repo
+        ref["target_repo"] = target_repo
     registry.setdefault("tasks", {})[task_id] = ref
     return task_id, path, task
 
@@ -1665,7 +1749,7 @@ def create_task_payload(registry: dict, project_id: str, title: str, assigned_to
 def cmd_create_task(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
     registry = load_registry(repo)
-    task_id, path, task = create_task_payload(registry, args.project_id, args.title, args.assigned_to, args.role, args.expected_output)
+    task_id, path, task = create_task_payload(registry, args.project_id, args.title, args.assigned_to, args.role, args.expected_output, args.target_repo)
     write_text(repo / path, dump(task))
     for rel, text in task_support_files(path, task).items():
         write_text(repo / rel, text)
@@ -1801,6 +1885,8 @@ def sync_task_ref(registry: dict, task_id: str, path: str, task: dict) -> None:
         "milestone": task.get("milestone", ""),
         "feature_area": task.get("feature_area", ""),
         "expected_output": task.get("expected_output", ""),
+        "target_repo": task.get("target_repo", ""),
+        "output_commit": task.get("output_commit", ""),
     }
 
 
@@ -1836,7 +1922,9 @@ def update_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str,
     path, task = load_task_record(repo, registry, task_id)
     if task.get("status") in HISTORICAL_TASK_STATUSES and not payload.get("allow_historical_edit"):
         raise GitPMError(f"refusing to update {task_id}; {task.get('status')} tasks are historical. Use review-task to request changes or create a project-note/decision for later context.")
-    for field in ["status", "checkpoint", "priority", "assigned_to", "deadline", "milestone", "feature_area", "release_target", "estimate", "risk", "reviewer", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]:
+    if payload.get("commit") and not payload.get("output_commit"):
+        payload["output_commit"] = payload["commit"]
+    for field in ["status", "checkpoint", "priority", "assigned_to", "deadline", "milestone", "feature_area", "release_target", "estimate", "risk", "reviewer", "expected_output", "target_repo", "output", "output_commit", "blocker", "ai_update", "user_update"]:
         value = payload.get(field)
         if value not in (None, ""):
             task[field] = value
@@ -1858,6 +1946,8 @@ def update_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str,
 
 
 def submit_output_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    if payload.get("commit") and not payload.get("output_commit"):
+        payload["output_commit"] = payload["commit"]
     payload = {**payload, "status": payload.get("status") or "In Review", "checkpoint": payload.get("checkpoint") or "Review", "suppress_event": True}
     title, _message, actions = update_task_actions(repo, registry, payload)
     task_id = payload.get("task_id", "")
@@ -1868,7 +1958,7 @@ def submit_output_actions(repo: Path, registry: dict, payload: dict) -> tuple[st
         payload.get("actor", ""),
         "submitted_output",
         payload.get("message") or payload.get("output") or f"Submitted output for {task_id}",
-        {"output": payload.get("output", "")},
+        {"output": payload.get("output", ""), "target_repo": task.get("target_repo", ""), "output_commit": task.get("output_commit", "")},
     )
     actions[0]["content"] = dump(registry)
     actions.append(event_action(repo, event))
@@ -1905,7 +1995,7 @@ def review_task_actions(repo: Path, registry: dict, payload: dict) -> tuple[str,
         payload.get("reviewer", ""),
         event_type,
         payload.get("notes", "") or f"{decision} review for {task_id}",
-        {"review_id": review_id, "decision": decision, "output": task.get("output", "")},
+        {"review_id": review_id, "decision": decision, "output": task.get("output", ""), "target_repo": task.get("target_repo", ""), "output_commit": task.get("output_commit", "")},
     )
     title = f"Review {task_id}: {decision}"
     return title, event["message"], [
@@ -1924,12 +2014,24 @@ def record_attempt_actions(repo: Path, registry: dict, payload: dict) -> tuple[s
     output = payload.get("output", "")
     task["status"] = "In Review"
     task["checkpoint"] = "Review"
+    if payload.get("target_repo"):
+        task["target_repo"] = payload["target_repo"]
+    output_commit = payload.get("output_commit") or payload.get("commit", "")
+    if output_commit:
+        task["output_commit"] = output_commit
     if output:
         task["output"] = output
     message = payload.get("message") or output or f"Output attempt recorded for {task_id}"
     task["user_update"] = message
     sync_task_ref(registry, task_id, path, task)
-    event = make_event(registry, task, payload.get("actor", ""), "output_attempted", message, {"output": output or task.get("output", "")})
+    event = make_event(
+        registry,
+        task,
+        payload.get("actor", ""),
+        "output_attempted",
+        message,
+        {"output": output or task.get("output", ""), "target_repo": task.get("target_repo", ""), "output_commit": task.get("output_commit", "")},
+    )
     return f"Record attempt for {task_id}", message, [
         {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
         {"action": "update", "file_path": path, "content": dump(task)},
@@ -1964,7 +2066,7 @@ def record_verification_failed_actions(repo: Path, registry: dict, payload: dict
         reviewer,
         "verification_failed",
         reason,
-        {"review_id": review_id, "decision": "verification_failed", "output": payload.get("output") or task.get("output", "")},
+        {"review_id": review_id, "decision": "verification_failed", "output": payload.get("output") or task.get("output", ""), "target_repo": task.get("target_repo", ""), "output_commit": task.get("output_commit", "")},
     )
     return f"Verification failed for {task_id}", reason, [
         {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
@@ -2047,6 +2149,35 @@ def cancel_review_actions(repo: Path, registry: dict, payload: dict) -> tuple[st
     ]
 
 
+def register_repo_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
+    project_id = payload.get("project_id", "")
+    project = registry.get("projects", {}).get(project_id)
+    if not project:
+        raise GitPMError(f"missing project {project_id}")
+    name = payload.get("name", "").strip()
+    url = payload.get("url", "").strip()
+    if not name:
+        raise GitPMError("register_repo requires name")
+    if not url:
+        raise GitPMError("register_repo requires url")
+    repo_link = {
+        "name": name,
+        "provider": payload.get("provider", "").strip() or "github",
+        "url": url,
+        "default_branch": payload.get("default_branch", "").strip() or "main",
+        "role": payload.get("role", "").strip(),
+    }
+    existing = project.setdefault("repos", [])
+    project["repos"] = [row for row in existing if normalize_repo_ref(row.get("name", "")) != normalize_repo_ref(name)]
+    project["repos"].append(repo_link)
+    registry.setdefault("projects", {})[project_id] = project
+    title = f"Register repo {name} for {project_id}"
+    return title, title, [
+        {"action": "update", "file_path": "registry.yaml", "content": dump(registry)},
+        {"action": "update", "file_path": project["path"], "content": dump(project)},
+    ]
+
+
 def register_asset_actions(repo: Path, registry: dict, payload: dict) -> tuple[str, str, list[dict]]:
     project_id = payload.get("project_id", "")
     project = registry.get("projects", {}).get(project_id)
@@ -2101,7 +2232,7 @@ def cmd_add_event(args: argparse.Namespace) -> int:
 
 
 def cmd_submit_output(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "submit_output", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message})
+    result = apply_payload(repo_arg(args.repo), {"type": "submit_output", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message, "target_repo": args.target_repo, "output_commit": args.output_commit})
     print(json.dumps(result, indent=2))
     return 0
 
@@ -2113,7 +2244,7 @@ def cmd_review_task(args: argparse.Namespace) -> int:
 
 
 def cmd_record_attempt(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "record_attempt", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message})
+    result = apply_payload(repo_arg(args.repo), {"type": "record_attempt", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message, "target_repo": args.target_repo, "output_commit": args.output_commit})
     print(json.dumps(result, indent=2))
     return 0
 
@@ -2138,6 +2269,23 @@ def cmd_supersede_output(args: argparse.Namespace) -> int:
 
 def cmd_cancel_review(args: argparse.Namespace) -> int:
     result = apply_payload(repo_arg(args.repo), {"type": "cancel_review", "task_id": args.task_id, "actor": args.actor, "reason": args.reason})
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_register_repo(args: argparse.Namespace) -> int:
+    result = apply_payload(
+        repo_arg(args.repo),
+        {
+            "type": "register_repo",
+            "project_id": args.project_id,
+            "name": args.name,
+            "provider": args.provider,
+            "url": args.url,
+            "default_branch": args.default_branch,
+            "role": args.role,
+        },
+    )
     print(json.dumps(result, indent=2))
     return 0
 
@@ -2293,6 +2441,7 @@ def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
             payload.get("assigned_to", ""),
             payload.get("role", ""),
             payload.get("expected_output", ""),
+            payload.get("target_repo", ""),
         )
         title = f"Create {task_id}: {payload.get('title', '')}"
         actions = [
@@ -2370,6 +2519,9 @@ def proposal_actions(repo: Path, payload: dict) -> tuple[str, str, list[dict]]:
     if change_type == "cancel_review":
         registry = load_registry(repo)
         return cancel_review_actions(repo, registry, payload)
+    if change_type == "register_repo":
+        registry = load_registry(repo)
+        return register_repo_actions(repo, registry, payload)
     if change_type == "register_asset":
         registry = load_registry(repo)
         return register_asset_actions(repo, registry, payload)
@@ -2728,6 +2880,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--assigned-to", required=True)
     p.add_argument("--role", default="")
     p.add_argument("--expected-output", required=True)
+    p.add_argument("--target-repo", default="")
     p.set_defaults(func=cmd_create_task)
 
     p = sub.add_parser("create-milestone")
@@ -2780,6 +2933,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dependencies", default="")
     p.add_argument("--target-repo", default="")
     p.add_argument("--output", default="")
+    p.add_argument("--output-commit", default="")
     p.add_argument("--blocker", default="")
     p.add_argument("--ai-update", default="")
     p.add_argument("--user-update", default="")
@@ -2799,6 +2953,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task-id", required=True)
     p.add_argument("--actor", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument("--target-repo", default="")
+    p.add_argument("--output-commit", default="")
     p.add_argument("--message", default="")
     p.set_defaults(func=cmd_submit_output)
 
@@ -2815,6 +2971,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task-id", required=True)
     p.add_argument("--actor", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument("--target-repo", default="")
+    p.add_argument("--output-commit", default="")
     p.add_argument("--message", default="")
     p.set_defaults(func=cmd_record_attempt)
 
@@ -2849,6 +3007,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", required=True)
     p.add_argument("--reason", required=True)
     p.set_defaults(func=cmd_cancel_review)
+
+    p = sub.add_parser("register-repo")
+    add_common_repo(p)
+    p.add_argument("--project-id", required=True)
+    p.add_argument("--name", required=True)
+    p.add_argument("--provider", default="github", choices=["github", "gitlab", "other"])
+    p.add_argument("--url", required=True)
+    p.add_argument("--default-branch", default="main")
+    p.add_argument("--role", default="")
+    p.set_defaults(func=cmd_register_repo)
 
     p = sub.add_parser("register-asset")
     add_common_repo(p)

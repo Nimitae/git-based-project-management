@@ -188,6 +188,27 @@ function approvedReviewExists(reviews, taskId) {
   return reviews.some((row) => row.task_id === taskId && row.decision === "approved");
 }
 
+function normalizeRepoRef(value) {
+  const clean = String(value || "").trim().replace(/\/+$/g, "").toLowerCase();
+  return clean.endsWith(".git") ? clean.slice(0, -4) : clean;
+}
+
+function projectRepoKeys(project) {
+  const keys = new Set();
+  for (const repoLink of project?.repos || []) {
+    for (const field of ["name", "url"]) {
+      const value = normalizeRepoRef(repoLink[field] || "");
+      if (value) keys.add(value);
+    }
+  }
+  return keys;
+}
+
+function projectRepoMatches(project, targetRepo) {
+  const target = normalizeRepoRef(targetRepo);
+  return Boolean(target) && projectRepoKeys(project).has(target);
+}
+
 function taskFolderFromPath(taskPath) {
   const clean = String(taskPath || "").replaceAll("\\", "/");
   if (clean.endsWith("/task.yaml")) return clean.split("/").slice(0, -1).join("/");
@@ -212,6 +233,11 @@ async function validateRepo(registry) {
   for (const [projectId, project] of Object.entries(registry.projects || {})) {
     if (!PROJECT_STATUSES.has(project.status)) issues.push({ level: "warn", code: "PROJECT_STATUS", message: `${projectId} status is unusual: ${project.status}`, path: project.path || "" });
     if (!project.owners?.length) issues.push({ level: "warn", code: "PROJECT_OWNER_MISSING", message: `${projectId} has no owners`, path: project.path || "" });
+    for (const repoLink of project.repos || []) {
+      if (!repoLink.name) issues.push({ level: "warn", code: "PROJECT_REPO_NAME_MISSING", message: `${projectId} has repo link without name`, path: project.path || "" });
+      if (!repoLink.provider) issues.push({ level: "warn", code: "PROJECT_REPO_PROVIDER_MISSING", message: `${projectId} has repo link without provider`, path: project.path || "" });
+      if (!repoLink.url) issues.push({ level: "warn", code: "PROJECT_REPO_URL_MISSING", message: `${projectId} has repo link without url`, path: project.path || "" });
+    }
     if (project.roadmap && !(await exists(safeRepoPath(project.roadmap)))) issues.push({ level: "warn", code: "PROJECT_ROADMAP_MISSING", message: `${projectId} roadmap file is missing`, path: project.roadmap });
   }
   for (const [milestoneId, ref] of Object.entries(registry.milestones || {})) {
@@ -245,6 +271,11 @@ async function validateRepo(registry) {
     if (task.status === "In Review" && !task.output) issues.push({ level: "error", code: "TASK_REVIEW_OUTPUT_MISSING", message: `${taskId} is In Review without output link`, path: ref.path || "" });
     if (["Done", "Verified"].includes(task.status) && !task.output) issues.push({ level: "error", code: "TASK_OUTPUT_MISSING", message: `${taskId} is ${task.status} without output link`, path: ref.path || "" });
     if (["Done", "Verified"].includes(task.status) && !approvedReviewExists(reviews, taskId)) issues.push({ level: "error", code: "TASK_APPROVED_REVIEW_MISSING", message: `${taskId} is ${task.status} without an approved review record`, path: ref.path || "" });
+    const targetRepo = task.target_repo || "";
+    const project = registry.projects?.[task.project_id] || {};
+    if (targetRepo && !projectRepoMatches(project, targetRepo)) issues.push({ level: "warn", code: "TASK_TARGET_REPO_UNKNOWN", message: `${taskId} target_repo ${targetRepo} is not listed in its project repos`, path: ref.path || "" });
+    if (task.status === "In Review" && task.output && targetRepo && !task.output_commit) issues.push({ level: "warn", code: "TASK_OUTPUT_COMMIT_MISSING", message: `${taskId} is in review with target_repo but no output_commit`, path: ref.path || "" });
+    if (["Done", "Verified"].includes(task.status) && targetRepo && !task.output_commit) issues.push({ level: "error", code: "TASK_OUTPUT_COMMIT_MISSING", message: `${taskId} is ${task.status} with target_repo but no output_commit`, path: ref.path || "" });
     if (task.milestone && !registry.milestones?.[task.milestone]) issues.push({ level: "error", code: "REL_TASK_MILESTONE", message: `${taskId} references missing ${task.milestone}`, path: ref.path || "" });
     for (const dep of task.dependencies || []) {
       if (!registry.tasks?.[dep]) issues.push({ level: "error", code: "REL_TASK_DEPENDENCY", message: `${taskId} depends on missing ${dep}`, path: ref.path || "" });
@@ -388,6 +419,26 @@ function featureProposals(docs) {
   return (docs || []).filter((doc) => ["feature-proposal", "feature-brief"].includes(doc.type || "") && ["draft", "live", "review"].includes(doc.status || "draft"));
 }
 
+function repoStateUnknown(tasks, registry) {
+  const outputLabels = ["pull request", "merge request", "implementation pr", "implementation mr", "commit"];
+  const rows = [];
+  for (const task of openTasks(tasks || [])) {
+    const expected = String(task.expected_output || "").toLowerCase();
+    const targetRepo = task.target_repo || "";
+    const needsRepo = Boolean(targetRepo) || outputLabels.some((label) => expected.includes(label));
+    if (!needsRepo) continue;
+    const project = registry.projects?.[task.project_id] || {};
+    const reasons = [];
+    if (!targetRepo) reasons.push("missing_target_repo");
+    else if (!projectRepoMatches(project, targetRepo)) reasons.push("target_repo_not_registered");
+    if (task.status === "In Review" && task.output && targetRepo && !task.output_commit) reasons.push("missing_output_commit");
+    if (reasons.length) {
+      rows.push({ task_id: task.id || "", project_id: task.project_id || "", title: task.title || "", assigned_to: task.assigned_to || "", reviewer: task.reviewer || "", status: task.status || "", target_repo: targetRepo, output: task.output || "", output_commit: task.output_commit || "", reasons });
+    }
+  }
+  return rows;
+}
+
 function projectStatusSummary(data) {
   return {
     counts: {
@@ -399,6 +450,7 @@ function projectStatusSummary(data) {
       review_queue: (data.review_queue || []).length,
       stale_work: (data.stale_work || []).length,
       feature_proposals: (data.feature_proposals || []).length,
+      repo_state_unknown: (data.repo_state_unknown || []).length,
       validation_issues: (data.validation?.issues || []).length
     }
   };
@@ -445,6 +497,7 @@ async function compileData() {
     blocked_tasks: blockedTasks(tasks),
     stale_work: staleWork(tasks, events),
     feature_proposals: featureProposals(docs),
+    repo_state_unknown: repoStateUnknown(tasks, registry),
     validation: { issues }
   };
   data.project_status = projectStatusSummary(data);
@@ -458,8 +511,8 @@ function createTaskPayload(registry, payload) {
   const taskId = allocateId(registry, "task");
   const taskFolder = `projects/${projectFolder(payload.project_id, project.name)}/tasks/${taskId}`;
   const taskPath = `${taskFolder}/task.yaml`;
-  const task = { id: taskId, project_id: payload.project_id, title: payload.title || "", assigned_to: payload.assigned_to || "", role: payload.role || "", status: "Backlog", checkpoint: "Drafting", priority: "Medium", deadline: "", milestone: "", feature_area: "", release_target: "", estimate: "", risk: "", reviewer: "", expected_output: payload.expected_output || "", acceptance_criteria: [], dependencies: [], target_repo: "", output: "", blocker: "", ai_update: "", user_update: "", artifacts: { notes: `${taskFolder}/notes.md`, outputs: `${taskFolder}/outputs.md`, attachments: `${taskFolder}/attachments/` } };
-  registry.tasks[taskId] = { project_id: payload.project_id, path: taskPath, folder: taskFolder, title: task.title, assigned_to: task.assigned_to, status: "Backlog", milestone: "", feature_area: "", expected_output: task.expected_output };
+  const task = { id: taskId, project_id: payload.project_id, title: payload.title || "", assigned_to: payload.assigned_to || "", role: payload.role || "", status: "Backlog", checkpoint: "Drafting", priority: "Medium", deadline: "", milestone: "", feature_area: "", release_target: "", estimate: "", risk: "", reviewer: "", expected_output: payload.expected_output || "", acceptance_criteria: [], dependencies: [], target_repo: payload.target_repo || "", output: "", output_commit: "", blocker: "", ai_update: "", user_update: "", artifacts: { notes: `${taskFolder}/notes.md`, outputs: `${taskFolder}/outputs.md`, attachments: `${taskFolder}/attachments/` } };
+  registry.tasks[taskId] = { project_id: payload.project_id, path: taskPath, folder: taskFolder, title: task.title, assigned_to: task.assigned_to, status: "Backlog", milestone: "", feature_area: "", expected_output: task.expected_output, target_repo: task.target_repo, output_commit: "" };
   return { taskId, taskPath, task };
 }
 
@@ -536,7 +589,7 @@ async function loadTaskRecord(registry, taskId) {
 
 function syncTaskRef(registry, taskId, taskPath, task) {
   registry.tasks ||= {};
-  registry.tasks[taskId] = { project_id: task.project_id || "", path: taskPath, folder: taskFolderFromPath(taskPath), title: task.title || "", assigned_to: task.assigned_to || "", status: task.status || "Backlog", milestone: task.milestone || "", feature_area: task.feature_area || "", expected_output: task.expected_output || "" };
+  registry.tasks[taskId] = { project_id: task.project_id || "", path: taskPath, folder: taskFolderFromPath(taskPath), title: task.title || "", assigned_to: task.assigned_to || "", status: task.status || "Backlog", milestone: task.milestone || "", feature_area: task.feature_area || "", expected_output: task.expected_output || "", target_repo: task.target_repo || "", output_commit: task.output_commit || "" };
 }
 
 function makeEvent(registry, task, actor, eventType, message, extra = {}) {
@@ -562,7 +615,8 @@ async function updateTaskActions(registry, payload) {
   const taskId = payload.task_id || "";
   const { path: taskPath, task } = await loadTaskRecord(registry, taskId);
   if (HISTORICAL_TASK_STATUSES.has(task.status || "") && !payload.allow_historical_edit) throw new Error(`refusing to update ${taskId}; ${task.status} tasks are historical. Use review workflow or create a project note/decision for later context.`);
-  for (const field of ["status", "checkpoint", "priority", "assigned_to", "deadline", "milestone", "feature_area", "release_target", "estimate", "risk", "reviewer", "expected_output", "target_repo", "output", "blocker", "ai_update", "user_update"]) {
+  if (payload.commit && !payload.output_commit) payload.output_commit = payload.commit;
+  for (const field of ["status", "checkpoint", "priority", "assigned_to", "deadline", "milestone", "feature_area", "release_target", "estimate", "risk", "reviewer", "expected_output", "target_repo", "output", "output_commit", "blocker", "ai_update", "user_update"]) {
     if (payload[field]) task[field] = payload[field];
   }
   if (payload.acceptance_criteria) task.acceptance_criteria = splitCsv(payload.acceptance_criteria);
@@ -579,9 +633,10 @@ async function updateTaskActions(registry, payload) {
 }
 
 async function submitOutputActions(registry, payload) {
+  if (payload.commit && !payload.output_commit) payload.output_commit = payload.commit;
   const result = await updateTaskActions(registry, { ...payload, status: payload.status || "In Review", checkpoint: payload.checkpoint || "Review", suppress_event: true });
   const { task } = await loadTaskRecord(registry, payload.task_id || "");
-  const event = makeEvent(registry, { ...task, id: payload.task_id }, payload.actor || "", "submitted_output", payload.message || payload.output || `Submitted output for ${payload.task_id}`, { output: payload.output || "" });
+  const event = makeEvent(registry, { ...task, id: payload.task_id }, payload.actor || "", "submitted_output", payload.message || payload.output || `Submitted output for ${payload.task_id}`, { output: payload.output || "", target_repo: task.target_repo || "", output_commit: task.output_commit || "" });
   result.actions[0].content = dump(registry);
   result.actions.push(await eventAction(event));
   result.title = result.title.replace("Update", "Submit output for");
@@ -604,7 +659,7 @@ async function reviewTaskActions(registry, payload) {
   syncTaskRef(registry, taskId, taskPath, task);
   const review = { id: allocateId(registry, "review"), task_id: taskId, project_id: task.project_id || "", reviewer: payload.reviewer || "", decision, notes: payload.notes || "", created_at: nowIso() };
   const eventType = decision === "verification_failed" ? "verification_failed" : decision === "cancelled" ? "review_cancelled" : `review_${decision}`;
-  const event = makeEvent(registry, task, payload.reviewer || "", eventType, payload.notes || `${decision} review for ${taskId}`, { review_id: review.id, decision, output: task.output || "" });
+  const event = makeEvent(registry, task, payload.reviewer || "", eventType, payload.notes || `${decision} review for ${taskId}`, { review_id: review.id, decision, output: task.output || "", target_repo: task.target_repo || "", output_commit: task.output_commit || "" });
   return { title: `Review ${taskId}: ${decision}`, message: event.message, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await reviewAction(review), await eventAction(event)] };
 }
 
@@ -615,11 +670,14 @@ async function recordAttemptActions(registry, payload) {
   const output = payload.output || "";
   task.status = "In Review";
   task.checkpoint = "Review";
+  if (payload.target_repo) task.target_repo = payload.target_repo;
+  const outputCommit = payload.output_commit || payload.commit || "";
+  if (outputCommit) task.output_commit = outputCommit;
   if (output) task.output = output;
   const message = payload.message || output || `Output attempt recorded for ${taskId}`;
   task.user_update = message;
   syncTaskRef(registry, taskId, taskPath, task);
-  const event = makeEvent(registry, task, payload.actor || "", "output_attempted", message, { output: output || task.output || "" });
+  const event = makeEvent(registry, task, payload.actor || "", "output_attempted", message, { output: output || task.output || "", target_repo: task.target_repo || "", output_commit: task.output_commit || "" });
   return { title: `Record attempt for ${taskId}`, message, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await eventAction(event)] };
 }
 
@@ -634,7 +692,7 @@ async function recordVerificationFailedActions(registry, payload) {
   syncTaskRef(registry, taskId, taskPath, task);
   const reviewId = allocateId(registry, "review");
   const review = { id: reviewId, task_id: taskId, project_id: task.project_id || "", reviewer: payload.reviewer || "", decision: "verification_failed", notes: reason, created_at: nowIso() };
-  const event = makeEvent(registry, task, payload.reviewer || "", "verification_failed", reason, { review_id: reviewId, decision: "verification_failed", output: payload.output || task.output || "" });
+  const event = makeEvent(registry, task, payload.reviewer || "", "verification_failed", reason, { review_id: reviewId, decision: "verification_failed", output: payload.output || task.output || "", target_repo: task.target_repo || "", output_commit: task.output_commit || "" });
   return { title: `Verification failed for ${taskId}`, message: reason, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await reviewAction(review), await eventAction(event)] };
 }
 
@@ -684,6 +742,22 @@ async function cancelReviewActions(registry, payload) {
   const review = { id: reviewId, task_id: taskId, project_id: task.project_id || "", reviewer: actor, decision: "cancelled", notes: reason, created_at: nowIso() };
   const event = makeEvent(registry, task, actor, "review_cancelled", reason, { review_id: reviewId, output: task.output || "" });
   return { title: `Cancel review for ${taskId}`, message: reason, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: taskPath, content: dump(task) }, await reviewAction(review), await eventAction(event)] };
+}
+
+async function registerRepoActions(registry, payload) {
+  const project = registry.projects?.[payload.project_id];
+  if (!project) throw new Error(`missing project ${payload.project_id}`);
+  const name = String(payload.name || "").trim();
+  const url = String(payload.url || "").trim();
+  if (!name) throw new Error("register_repo requires name");
+  if (!url) throw new Error("register_repo requires url");
+  const repoLink = { name, provider: String(payload.provider || "github").trim() || "github", url, default_branch: String(payload.default_branch || "main").trim() || "main", role: String(payload.role || "").trim() };
+  project.repos ||= [];
+  project.repos = project.repos.filter((row) => normalizeRepoRef(row.name || "") !== normalizeRepoRef(name));
+  project.repos.push(repoLink);
+  registry.projects[payload.project_id] = project;
+  const title = `Register repo ${name} for ${payload.project_id}`;
+  return { title, message: title, actions: [{ action: "update", file_path: "registry.yaml", content: dump(registry) }, { action: "update", file_path: project.path, content: dump(project) }] };
 }
 
 async function registerAssetActions(registry, payload) {
@@ -773,6 +847,9 @@ async function proposalActions(payload) {
   }
   if (payload.type === "cancel_review") {
     return cancelReviewActions(await loadRegistry(), payload);
+  }
+  if (payload.type === "register_repo") {
+    return registerRepoActions(await loadRegistry(), payload);
   }
   if (payload.type === "register_asset") {
     return registerAssetActions(await loadRegistry(), payload);

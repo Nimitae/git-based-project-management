@@ -18,14 +18,15 @@ The bundled static UI supports:
 
 - Project/document/task dashboard.
 - My Work view for assignee/reviewer task lookup.
-- Project Health view for blocked tasks, stale work, and active feature proposals.
+- Project Health view for blocked tasks, stale work, feature proposals awaiting decision, and repo verification gaps.
 - Review queue for work in review, failed verification, withdrawn outputs, cancelled reviews, and stale review items.
 - Search across docs/tasks/assets/owners/status.
 - Task table with status and expected output.
 - Documents panel with Git paths.
 - Document rows include file hashes so raw edit proposals can carry a base hash.
 - Assets panel with mockups, art, models, videos, builds, and external links.
-- Create-task proposal form.
+- Create-task proposal form with optional target repo.
+- Register-repo proposal form for project implementation repos.
 - Feature-proposal form.
 - Create-milestone proposal form.
 - Create-document proposal form.
@@ -70,7 +71,20 @@ Proposal payload examples:
   "project_id": "PROJ1",
   "assigned_to": "Samantha",
   "role": "Design",
-  "expected_output": "Concept Doc"
+  "expected_output": "Concept Doc",
+  "target_repo": "game-client"
+}
+```
+
+```json
+{
+  "type": "register_repo",
+  "project_id": "PROJ1",
+  "name": "game-client",
+  "provider": "github",
+  "url": "https://github.com/example/game-client",
+  "default_branch": "main",
+  "role": "client/gameplay"
 }
 ```
 
@@ -137,6 +151,8 @@ If `base_sha256` is provided and the file has changed, the website rejects the p
   "task_id": "TASK3",
   "actor": "Paul",
   "output": "https://gitlab.garena.com/group/game/-/merge_requests/42",
+  "target_repo": "game-client",
+  "output_commit": "0123456789abcdef0123456789abcdef01234567",
   "message": "FTUE tracking implementation ready for objective checks."
 }
 ```

@@ -98,7 +98,10 @@
               <h2>My Work</h2>
               <input id="myWorkOwner" type="search" placeholder="Type an owner or reviewer name" />
             </div>
-            <div id="myWorkList" class="task-board"></div>
+            <h3>Assigned To Me</h3>
+            <div id="myAssignedList" class="task-board"></div>
+            <h3>Needs Review By Me</h3>
+            <div id="myReviewList" class="task-board"></div>
           </section>
         </section>
 
@@ -120,9 +123,16 @@
 
             <section class="panel wide">
               <div class="panel-header">
-                <h2>Feature Proposals</h2>
+                <h2>Feature Proposals Awaiting Decision</h2>
               </div>
               <div id="featureProposalList" class="doc-list"></div>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-header">
+                <h2>Repo Verification Gaps</h2>
+              </div>
+              <div id="repoStateUnknownList" class="event-list"></div>
             </section>
           </div>
         </section>
@@ -198,7 +208,9 @@
                   </select>
                 </label>
                 <label>User Update <textarea name="user_update" rows="4" placeholder="What changed, what is blocked, or what needs review"></textarea></label>
+                <label>Target Repo <input name="target_repo" placeholder="game-client" /></label>
                 <label>Output Link <input name="output" placeholder="PR, video, build, mockup, or report URL" /></label>
+                <label>Output Commit <input name="output_commit" placeholder="40-char commit SHA when output changes code" /></label>
                 <label>Blocker <input name="blocker" placeholder="Only required when blocked" /></label>
                 <label>Milestone <input name="milestone" placeholder="MILESTONE1" /></label>
                 <label>Feature Area <input name="feature_area" placeholder="FTUE, combat, backend, UI" /></label>
@@ -215,6 +227,8 @@
                 <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
                 <label>Actor <input name="actor" placeholder="Paul" required /></label>
                 <label>Output <input name="output" placeholder="https://github.com/org/repo/pull/42" required /></label>
+                <label>Target Repo <input name="target_repo" placeholder="game-client" /></label>
+                <label>Output Commit <input name="output_commit" placeholder="40-char commit SHA" /></label>
                 <label>Message <textarea name="message" rows="4" placeholder="What should the reviewer check?"></textarea></label>
                 <button type="submit">Submit For Review</button>
               </form>
@@ -249,6 +263,8 @@
                 <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
                 <label>Actor <input name="actor" placeholder="Paul" required /></label>
                 <label>Output <input name="output" placeholder="PR, MR, build, asset, capture, or doc link" required /></label>
+                <label>Target Repo <input name="target_repo" placeholder="game-client" /></label>
+                <label>Output Commit <input name="output_commit" placeholder="40-char commit SHA" /></label>
                 <label>Message <textarea name="message" rows="4" placeholder="What changed and what should be verified?"></textarea></label>
                 <button type="submit">Record Attempt</button>
               </form>
@@ -340,7 +356,29 @@
                 <label>Assigned To <input name="assigned_to" placeholder="Samantha" required /></label>
                 <label>Role <input name="role" placeholder="PM" /></label>
                 <label>Expected Output <input name="expected_output" placeholder="Design Doc" required /></label>
+                <label>Target Repo <input name="target_repo" placeholder="game-client, game-backend, web-portal" /></label>
                 <button type="submit">Create PR/MR Proposal</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Register Repo PR/MR</h2>
+              </div>
+              <form id="registerRepoForm" class="form-stack">
+                <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
+                <label>Repo Name <input name="name" placeholder="game-client" required /></label>
+                <label>Provider
+                  <select name="provider">
+                    <option>github</option>
+                    <option>gitlab</option>
+                    <option>other</option>
+                  </select>
+                </label>
+                <label>URL <input name="url" placeholder="https://github.com/org/game-client" required /></label>
+                <label>Default Branch <input name="default_branch" placeholder="main" /></label>
+                <label>Role <input name="role" placeholder="client/gameplay, backend, frontend" /></label>
+                <button type="submit">Register Repo</button>
               </form>
             </section>
 

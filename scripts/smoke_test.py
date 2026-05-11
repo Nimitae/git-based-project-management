@@ -61,6 +61,7 @@ def main() -> int:
         run(["init", "--repo", str(repo), "--name", "Demo Project Hub", "--owner", "Terence"])
         if not (repo / "START_HERE_FOR_AGENTS.md").exists():
             raise RuntimeError("START_HERE_FOR_AGENTS.md was not created")
+        run(["register-repo", "--repo", str(repo), "--project-id", "PROJ1", "--name", "game-client", "--provider", "github", "--url", "https://github.com/example/game-client", "--default-branch", "main", "--role", "client/gameplay"])
         run(["update-task", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--status", "In Progress", "--user-update", "Smoke test update"])
         run(["submit-output", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--output", "https://example.com/output", "--message", "Smoke output"])
         in_review = json.loads((repo / "projects" / "PROJ1-demo-project-hub" / "tasks" / "TASK1" / "task.yaml").read_text(encoding="utf-8"))
@@ -72,16 +73,17 @@ def main() -> int:
             raise RuntimeError(f"historical update guard did not explain the failure:\n{historical.stderr}")
         run(["create-milestone", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke milestone", "--owner", "Terence"])
         run(["propose-feature", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke feature", "--owner", "Terence", "--problem", "Need a smoke-tested proposal flow", "--value", "Owners can propose features", "--scope", "Docs and task breakdown", "--task-breakdown", "Create follow-up task after approval"])
-        run(["create-task", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke editable task", "--assigned-to", "Terence", "--role", "PM", "--expected-output", "Setup Confirmation"])
+        run(["create-task", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke editable task", "--assigned-to", "Terence", "--role", "Programmer", "--expected-output", "Pull Request", "--target-repo", "game-client"])
         if not (repo / "projects" / "PROJ1-demo-project-hub" / "tasks" / "TASK2" / "notes.md").exists():
             raise RuntimeError("task folder notes.md was not created")
-        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--output", "https://example.com/attempt-v1", "--message", "First attempt ready"])
+        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--target-repo", "game-client", "--output", "https://example.com/attempt-v1", "--output-commit", "0123456789abcdef0123456789abcdef01234567", "--message", "First attempt ready"])
         run(["record-verification-failed", "--repo", str(repo), "--task-id", "TASK2", "--reviewer", "Terence", "--reason", "Output link returned 404"])
-        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--output", "https://example.com/attempt-v2", "--message", "Second attempt ready"])
+        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--target-repo", "game-client", "--output", "https://example.com/attempt-v2", "--output-commit", "0123456789abcdef0123456789abcdef01234567", "--message", "Second attempt ready"])
         run(["supersede-output", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--new-output", "https://example.com/attempt-v3", "--reason", "Uploaded replacement build"])
         run(["cancel-review", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--reason", "Reviewer changed before checks began"])
-        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--output", "https://example.com/attempt-v4", "--message", "Final attempt ready"])
+        run(["record-attempt", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--target-repo", "game-client", "--output", "https://example.com/attempt-v4", "--output-commit", "fedcba9876543210fedcba9876543210fedcba98", "--message", "Final attempt ready"])
         run(["withdraw-output", "--repo", str(repo), "--task-id", "TASK2", "--actor", "Terence", "--reason", "Output no longer required"])
+        run(["create-task", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke repo verification gap", "--assigned-to", "Terence", "--role", "Programmer", "--expected-output", "Pull Request"])
         run(["register-asset", "--repo", str(repo), "--project-id", "PROJ1", "--title", "Smoke mockup", "--asset-type", "mockup", "--source-url", "https://example.com/mockup", "--used-by", "PROJ1,TASK1", "--owner", "Terence"])
         validate = run(["validate", "--repo", str(repo), "--json"])
         issues = json.loads(validate.stdout)["issues"]
@@ -110,6 +112,8 @@ def main() -> int:
             raise RuntimeError("review queue should include failed, withdrawn, or in-review attempts")
         if not compiled.get("feature_proposals"):
             raise RuntimeError("compiled data should include feature proposals")
+        if not any("missing_target_repo" in item.get("reasons", []) for item in compiled.get("repo_state_unknown", [])):
+            raise RuntimeError("compiled data should surface repo_state_unknown for implementation tasks without target_repo")
         port = free_port()
         env = os.environ.copy()
         for key in ["GPM_LIVE_PROPOSALS", "GPM_PROVIDER", "GPM_GITHUB_REPO", "GPM_GITHUB_TOKEN", "GPM_GITLAB_PROJECT", "GPM_GITLAB_TOKEN"]:
@@ -143,6 +147,19 @@ def main() -> int:
                 "assigned_to": "Terence",
                 "role": "PM",
                 "expected_output": "Setup Confirmation",
+                "target_repo": "",
+            },
+        )
+        repo_proposal = http_json(
+            base + "/api/proposals",
+            {
+                "type": "register_repo",
+                "project_id": "PROJ1",
+                "name": "web-portal",
+                "provider": "github",
+                "url": "https://github.com/example/web-portal",
+                "default_branch": "main",
+                "role": "frontend",
             },
         )
         update_proposal = http_json(
@@ -160,6 +177,8 @@ def main() -> int:
             raise RuntimeError(f"proposal directory was not created: {proposal}")
         if not Path(update_proposal.get("proposal_dir", "")).exists():
             raise RuntimeError(f"update proposal directory was not created: {update_proposal}")
+        if not Path(repo_proposal.get("proposal_dir", "")).exists():
+            raise RuntimeError(f"repo proposal directory was not created: {repo_proposal}")
         with request.urlopen(base + "/", timeout=10) as response:
             html = response.read().decode("utf-8")
         if "Project Workspace" not in html:

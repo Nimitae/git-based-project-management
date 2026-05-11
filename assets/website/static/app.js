@@ -110,17 +110,26 @@ function renderReviewQueue() {
 
 function renderMyWork() {
   const owner = state.myWorkOwner.trim().toLowerCase();
-  const tasks = state.data ? state.data.tasks.filter((task) => {
-    if (!owner) return !["Done", "Verified", "Iceboxed"].includes(task.status);
-    return [task.assigned_to, task.reviewer].some((value) => String(value || "").toLowerCase() === owner) && !["Done", "Verified", "Iceboxed"].includes(task.status);
-  }) : [];
-  $("myWorkList").innerHTML = tasks.map((task) => `
+  const open = (state.data ? state.data.tasks : []).filter((task) => !["Done", "Verified", "Iceboxed"].includes(task.status));
+  const assigned = open.filter((task) => !owner || String(task.assigned_to || "").toLowerCase() === owner);
+  const review = open.filter((task) => {
+    const reviewerMatch = !owner || String(task.reviewer || "").toLowerCase() === owner;
+    return reviewerMatch && (task.status === "In Review" || String(task.reviewer || "").trim());
+  });
+  $("myAssignedList").innerHTML = assigned.map((task) => `
     <article class="task-card">
       <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
       <span>${escapeHtml(task.assigned_to || "Unassigned")} / ${escapeHtml(task.status || "Backlog")} / ${escapeHtml(task.expected_output || "No expected output")}</span>
       <p>${escapeHtml(task.user_update || task.blocker || task.path || "")}</p>
     </article>
-  `).join("") || `<div class="task-card"><strong>No matching work</strong><span>Enter an assignee or reviewer name.</span></div>`;
+  `).join("") || `<div class="task-card"><strong>No assigned work</strong><span>Enter an assignee name or clear the filter.</span></div>`;
+  $("myReviewList").innerHTML = review.map((task) => `
+    <article class="task-card">
+      <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
+      <span>${escapeHtml(task.reviewer || "No reviewer")} / ${escapeHtml(task.status || "Backlog")} / ${escapeHtml(task.target_repo || "No target repo")}</span>
+      <p>${escapeHtml(task.output || task.user_update || task.path || "")}${task.output_commit ? ` / ${escapeHtml(task.output_commit.slice(0, 12))}` : ""}</p>
+    </article>
+  `).join("") || `<div class="task-card"><strong>No review work</strong><span>In-review tasks and explicit reviewer assignments appear here.</span></div>`;
 }
 
 function renderHealth() {
@@ -148,7 +157,16 @@ function renderHealth() {
       <strong>${escapeHtml(doc.id)} - ${escapeHtml(doc.title || "Feature proposal")}</strong>
       <span>${escapeHtml(doc.status || "draft")} / ${escapeHtml(doc.owner || "Unowned")} / ${escapeHtml(doc.path || "")}</span>
     </article>
-  `).join("") || `<div class="doc-row"><strong>No active feature proposals</strong><span>Use Create > Feature Proposal PR/MR to start one.</span></div>`;
+  `).join("") || `<div class="doc-row"><strong>No feature proposals awaiting decision</strong><span>Use Create > Feature Proposal PR/MR to start one.</span></div>`;
+
+  const repoUnknown = state.data ? (state.data.repo_state_unknown || []) : [];
+  $("repoStateUnknownList").innerHTML = repoUnknown.map((item) => `
+    <article class="event">
+      <strong>${escapeHtml(item.task_id || "")} ${escapeHtml((item.reasons || []).join(", "))}</strong>
+      <span>${escapeHtml(item.target_repo || "No target repo")} / ${escapeHtml(item.output_commit || "No output commit")} / ${escapeHtml(item.status || "")}</span>
+      <p>${escapeHtml(item.title || "")}${item.output ? ` / ${escapeHtml(item.output)}` : ""}</p>
+    </article>
+  `).join("") || `<div class="event"><strong>No repo verification gaps</strong><span>Tasks with missing target repos or output commits will appear here.</span></div>`;
 }
 
 function renderSummary() {
@@ -235,7 +253,22 @@ $("createTaskForm").addEventListener("submit", (event) => {
     title: form.get("title"),
     assigned_to: form.get("assigned_to"),
     role: form.get("role"),
-    expected_output: form.get("expected_output")
+    expected_output: form.get("expected_output"),
+    target_repo: form.get("target_repo")
+  });
+});
+
+$("registerRepoForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  submitProposal({
+    type: "register_repo",
+    project_id: form.get("project_id"),
+    name: form.get("name"),
+    provider: form.get("provider"),
+    url: form.get("url"),
+    default_branch: form.get("default_branch"),
+    role: form.get("role")
   });
 });
 
@@ -318,7 +351,9 @@ $("updateTaskForm").addEventListener("submit", (event) => {
     actor: form.get("actor"),
     status: form.get("status"),
     checkpoint: form.get("checkpoint"),
+    target_repo: form.get("target_repo"),
     output: form.get("output"),
+    output_commit: form.get("output_commit"),
     blocker: form.get("blocker"),
     milestone: form.get("milestone"),
     feature_area: form.get("feature_area"),
@@ -335,6 +370,8 @@ $("submitOutputForm").addEventListener("submit", (event) => {
     task_id: form.get("task_id"),
     actor: form.get("actor"),
     output: form.get("output"),
+    target_repo: form.get("target_repo"),
+    output_commit: form.get("output_commit"),
     message: form.get("message")
   });
 });
@@ -359,6 +396,8 @@ $("recordAttemptForm").addEventListener("submit", (event) => {
     task_id: form.get("task_id"),
     actor: form.get("actor"),
     output: form.get("output"),
+    target_repo: form.get("target_repo"),
+    output_commit: form.get("output_commit"),
     message: form.get("message")
   });
 });

@@ -25,7 +25,7 @@ Keep implementation codebases in their own GitHub/GitLab repos. This management 
 - Reviewer: verify task outputs against `policies/output-requirements.yaml`, append review records, and move tasks through review states.
 - Agent installer: run `doctor --interactive`, collect required credentials/access, and report missing permissions without storing long-lived secrets unless explicitly approved.
 
-Task lifecycle is `Backlog` -> `In Progress`/`Blocked` -> `In Review` -> `Done`/`Verified`. Prefer `submit-output` to move work into `In Review`; do not directly mark work `Done` or `Verified` unless output and approved review records are present.
+Task lifecycle is `Backlog` -> `In Progress`/`Blocked` -> `In Review` -> `Done`/`Verified`. Prefer `record-attempt` for day-to-day completion attempts because it leaves explicit attempt history; `submit-output` is the short convenience path for the same basic transition. Do not directly mark work `Done` or `Verified` unless output, output commit when a code repo is involved, acceptance criteria, and approved review records are present.
 
 Read `references/role-workflows.md` when deciding which fields a role may change.
 
@@ -54,7 +54,16 @@ git_pm.py blocked-tasks --repo .
 git_pm.py stale-work --repo .
 ```
 
-When a reviewer asks what needs review, start with `review-queue`, then inspect each task output before approval.
+When a reviewer asks what needs review, start with `review-queue`, then inspect each task output before approval. For code tasks, read the task `target_repo`, find that repo in the project `repos` list, and verify the `output_commit` exists in that implementation repo before approving.
+
+## Canonical User Prompts
+
+- "What should I work on today?" Pull latest Git, run `my-tasks`, read assigned task folders, summarize active work, blockers, review responsibilities, and next actions.
+- "Create a new feature proposal." Use `propose-feature`; do not create execution tasks until the owner/manager approves or explicitly asks for task breakdown PRs/MRs.
+- "Add this implementation repo to the project." Use `register-repo` with project ID, repo name, provider, URL, default branch, and role.
+- "Mark my task ready for review." Use `record-attempt` with `--output`, `--target-repo` when applicable, and `--output-commit` when the output is code.
+- "Review this task." Verify output access, task acceptance criteria, registered target repo, and output commit. Approve only when objective checks pass; otherwise use `record-verification-failed` or `review-task --decision changes_requested`.
+- "What is project health?" Run `project-status`, `review-queue`, `blocked-tasks`, `stale-work`, `audit-docs`, and inspect `repo_state_unknown` in compiled/website data.
 
 ## Core Commands
 
@@ -71,7 +80,8 @@ Use `scripts/git_pm.py` for deterministic work:
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" review-queue --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" create-milestone --repo ".\project-hub" --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Maya"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" propose-feature --repo ".\project-hub" --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya"
-& "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK3 --actor "Paul" --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --message "FTUE tracking implementation ready for review."
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" register-repo --repo ".\project-hub" --project-id PROJ1 --name game-client --provider gitlab --url "https://gitlab.garena.com/group/game-client" --default-branch main --role "client/gameplay"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK3 --actor "Paul" --target-repo game-client --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "FTUE tracking implementation ready for review."
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
 ```
@@ -160,9 +170,10 @@ git_pm.py create-doc --repo . --project-id PROJ1 --doc-type decision --title "Re
 Use controller commands for normal day-to-day updates:
 
 ```powershell
-git_pm.py update-task --repo . --task-id TASK3 --actor "Paul" --status "In Progress" --user-update "Prototype branch is running locally."
-git_pm.py submit-output --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/org/game-client/pull/42" --message "Ready for review."
-git_pm.py record-attempt --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/org/game-client/pull/42" --message "Ready for objective verification."
+git_pm.py register-repo --repo . --project-id PROJ1 --name game-client --provider github --url "https://github.com/org/game-client" --default-branch main --role "client/gameplay"
+git_pm.py update-task --repo . --task-id TASK3 --actor "Paul" --status "In Progress" --target-repo "game-client" --user-update "Prototype branch is running locally."
+git_pm.py submit-output --repo . --task-id TASK3 --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for review."
+git_pm.py record-attempt --repo . --task-id TASK3 --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for objective verification."
 git_pm.py record-verification-failed --repo . --task-id TASK3 --reviewer "Maya" --reason "PR link is inaccessible to the reviewer account."
 git_pm.py supersede-output --repo . --task-id TASK3 --actor "Paul" --new-output "https://github.com/org/game-client/pull/43" --reason "Replaced inaccessible PR with the correct branch."
 git_pm.py withdraw-output --repo . --task-id TASK3 --actor "Paul" --reason "Output is obsolete after scope changed."

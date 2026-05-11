@@ -92,6 +92,8 @@ Required top-level fields:
 }
 ```
 
+Every implementation repo that reviewers may need to inspect should be listed in `repos`. Tasks use `target_repo` to refer to either the repo `name` or URL. Reviewers use this mapping plus `output_commit` to confirm that code/task output exists in the actual implementation repository.
+
 ## Roadmap And Milestone
 
 `planning/roadmap.yaml`:
@@ -153,6 +155,7 @@ Required top-level fields:
   "dependencies": [],
   "target_repo": "game-client",
   "output": "",
+  "output_commit": "",
   "blocker": "",
   "ai_update": "",
   "user_update": "",
@@ -165,6 +168,12 @@ Required top-level fields:
 ```
 
 New tasks should be folder-based. `task.yaml` is durable state, `notes.md` is task-local context, `outputs.md` stores submitted artifacts and verification notes, and `attachments/` is only for small local references.
+
+For code tasks:
+
+- `target_repo`: repo name or URL from the owning project `repos` list.
+- `output`: PR/MR, build, deployment, artifact, or doc link.
+- `output_commit`: concrete commit SHA in the target implementation repo for reviewer verification.
 
 Task statuses:
 
@@ -250,7 +259,7 @@ Attempt-related event types are:
 - `output_superseded`: a submitted output was replaced by another output.
 - `review_cancelled`: review stopped before approval or changes-requested.
 
-Attempt events may include `output`, `previous_output`, `old_output`, `new_output`, `review_id`, or `decision` fields depending on the command.
+Attempt events may include `output`, `target_repo`, `output_commit`, `previous_output`, `old_output`, `new_output`, `review_id`, or `decision` fields depending on the command.
 
 ## Query Views
 
@@ -260,6 +269,7 @@ Attempt events may include `output`, `previous_output`, `old_output`, `new_outpu
 - `blocked_tasks`: tasks with `Blocked` status or blocker text.
 - `stale_work`: open tasks without recent event activity.
 - `feature_proposals`: active `feature-proposal` and `feature-brief` docs.
+- `repo_state_unknown`: tasks where an expected implementation output is missing a registered target repo or where in-review code output lacks an output commit.
 - `project_status`: counts and health summary.
 
 These are generated from canonical files. Do not edit generated view data directly.
@@ -332,7 +342,7 @@ Example: if the team renames `heroes` to `champions`, update live docs. Do not r
 
 `submit-output` should move work to `In Review`, not directly to `Done`. `Done` and `Verified` require output, acceptance criteria, and an approved review record. A PR/MR that directly marks a task `Done` without those fields should fail validation.
 
-If output cannot be objectively accessed or checked, reject the PR/MR and record `record-verification-failed` or a direct `review-task --decision verification_failed` follow-up so the attempt is searchable in Git.
+If output cannot be objectively accessed or checked, reject the PR/MR and record `record-verification-failed` or a direct `review-task --decision verification_failed` follow-up so the attempt is searchable in Git. For code tasks, a `Done` or `Verified` change with `target_repo` but no `output_commit` is invalid because the reviewer cannot confirm the exact implementation commit.
 
 ## Terminology Policy
 

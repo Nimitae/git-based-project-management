@@ -40,8 +40,10 @@ After approval, create the milestone and execution tasks:
 
 ```powershell
 git_pm.py create-milestone --repo . --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya"
-git_pm.py create-task --repo . --project-id PROJ1 --title "Implement FTUE client events" --assigned-to "Paul" --role "Programmer" --expected-output "Pull Request"
-git_pm.py create-task --repo . --project-id PROJ1 --title "Add FTUE telemetry ingestion" --assigned-to "Bao" --role "Backend Engineer" --expected-output "Pull Request"
+git_pm.py register-repo --repo . --project-id PROJ1 --name game-client --provider github --url "https://github.com/example/game-client" --default-branch main --role "client/gameplay"
+git_pm.py register-repo --repo . --project-id PROJ1 --name game-backend --provider github --url "https://github.com/example/game-backend" --default-branch main --role "backend"
+git_pm.py create-task --repo . --project-id PROJ1 --title "Implement FTUE client events" --assigned-to "Paul" --role "Programmer" --expected-output "Pull Request" --target-repo "game-client"
+git_pm.py create-task --repo . --project-id PROJ1 --title "Add FTUE telemetry ingestion" --assigned-to "Bao" --role "Backend Engineer" --expected-output "Pull Request" --target-repo "game-backend"
 ```
 
 ## Game Designer
@@ -77,10 +79,10 @@ Typical updates:
 
 ```powershell
 git_pm.py update-task --repo . --task-id TASK3 --actor "Paul" --status "In Progress" --user-update "Prototype branch is running locally; tuning hooks still missing."
-git_pm.py record-attempt --repo . --task-id TASK3 --actor "Paul" --output "https://github.com/example/game-client/pull/42" --message "Ability prototype ready; reviewer should check input buffering and cooldown values."
+git_pm.py record-attempt --repo . --task-id TASK3 --actor "Paul" --target-repo "game-client" --output "https://github.com/example/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ability prototype ready; reviewer should check input buffering and cooldown values."
 ```
 
-`record-attempt` and `submit-output` move work to `In Review`. Do not manually mark a task `Done` unless the same PR/MR includes an accessible output and an approved review record.
+`record-attempt` is the preferred day-to-day path because it records an explicit attempt event; `submit-output` is a shorter convenience path for basic submissions. Both move work to `In Review`. Do not manually mark a task `Done` unless the same PR/MR includes an accessible output, a registered `target_repo` when code is involved, an `output_commit`, and an approved review record.
 
 ## Artist
 
@@ -142,7 +144,7 @@ Typical updates:
 
 ```powershell
 git_pm.py update-task --repo . --task-id TASK7 --actor "Bao" --status "In Progress" --target-repo "game-backend" --user-update "Telemetry endpoint implemented; load test pending."
-git_pm.py submit-output --repo . --task-id TASK7 --actor "Bao" --output "https://github.com/example/game-backend/pull/18" --message "Reviewer should check schema migration and retry behavior."
+git_pm.py submit-output --repo . --task-id TASK7 --actor "Bao" --target-repo "game-backend" --output "https://github.com/example/game-backend/pull/18" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Reviewer should check schema migration and retry behavior."
 ```
 
 ## Frontend Engineer
@@ -158,7 +160,7 @@ Typical updates:
 
 ```powershell
 git_pm.py register-asset --repo . --project-id PROJ1 --title "Signup flow mockup v2" --asset-type "mockup" --storage "external-link" --source-url "https://example.com/figma/signup-v2" --used-by "PROJ1,TASK8" --owner "Fern"
-git_pm.py submit-output --repo . --task-id TASK8 --actor "Fern" --output "https://github.com/example/web-portal/pull/9" --message "Signup page ready; backend endpoint is mocked behind feature flag."
+git_pm.py submit-output --repo . --task-id TASK8 --actor "Fern" --target-repo "web-portal" --output "https://github.com/example/web-portal/pull/9" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Signup page ready; backend endpoint is mocked behind feature flag."
 ```
 
 ## Reviewer
@@ -171,7 +173,7 @@ git_pm.py review-task --repo . --task-id TASK4 --reviewer "Gina" --decision "app
 git_pm.py record-verification-failed --repo . --task-id TASK7 --reviewer "Maya" --reason "The staging endpoint returns 404 for the linked PR deployment."
 ```
 
-Use `approved` only when output is accessible, acceptance criteria are satisfied, and the task can move to `Verified`.
+Use `approved` only when output is accessible, acceptance criteria are satisfied, and the task can move to `Verified`. For implementation tasks, verify that `target_repo` is registered in the project and that `output_commit` exists in that repo.
 
 If output cannot be accessed or objectively checked, reject the PR/MR and record `record-verification-failed`. Do not merge invalid `Done` state just to preserve history; the rejected PR/MR plus append-only failed verification record is the history.
 
@@ -190,8 +192,10 @@ The website exposes the same flows:
 - `Tasks`: search and filter.
 - `Docs`: find canonical docs.
 - `Assets`: find mockups, art, videos, builds, and external files.
+- `My Work`: split assigned work from tasks needing review by the named user.
+- `Health`: inspect blocked work, stale work, feature proposals awaiting decision, and repo verification gaps.
 - `Updates`: update task status, record attempts, submit output, record failed verification, withdraw/supersede outputs, cancel reviews, add events, and review tasks.
-- `Create`: create tasks/docs, register assets, and propose raw file edits.
+- `Create`: create tasks/docs, register project repos, register assets, and propose raw file edits.
 - Milestones: create milestone PR/MR proposals for roadmap planning.
 
 In dry-run mode, proposals are written under `.project-hub/proposals/`. In live mode, they become GitHub PRs or GitLab MRs.

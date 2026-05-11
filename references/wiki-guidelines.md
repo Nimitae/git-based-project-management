@@ -253,7 +253,7 @@ tasks/TASK123/
   attachments/README.md
 ```
 
-`record-attempt` or `submit-output` moves a task to `In Review`. `Done` and `Verified` require output, acceptance criteria, and an approved review record.
+`record-attempt` or `submit-output` moves a task to `In Review`. `record-attempt` is preferred for normal completion attempts because it clearly preserves attempt history. `Done` and `Verified` require output, acceptance criteria, output commit for code tasks, and an approved review record.
 
 If a PR/MR marks a task `Done` but the output cannot be objectively verified, reject the PR/MR and record `record-verification-failed`. The rejected PR/MR plus the append-only failed verification record is the historical footprint. Do not merge false completed state.
 
@@ -281,6 +281,7 @@ Every task should link to its durable context:
 - `target_repo`: implementation repo when relevant.
 - `expected_output`: PR, design doc, asset, video, report, build, or review.
 - `output`: final submitted artifact.
+- `output_commit`: exact implementation commit when a code repo output is submitted.
 - `dependencies`: task IDs that must be resolved first.
 - `user_update`: latest human-authored status.
 - `ai_update`: latest agent-authored status.
