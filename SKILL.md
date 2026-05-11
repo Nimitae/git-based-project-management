@@ -27,6 +27,8 @@ Keep implementation codebases in their own GitHub/GitLab repos. This management 
 
 Task lifecycle is `Backlog` -> `In Progress`/`Blocked` -> `In Review` -> `Done`/`Verified`. Prefer `record-attempt` for day-to-day completion attempts because it leaves explicit attempt history; `submit-output` is the short convenience path for the same basic transition. Do not directly mark work `Done` or `Verified` unless output, output commit when a code repo is involved, acceptance criteria, and approved review records are present.
 
+Strongly prefer concrete task actors: assignees, reviewers, event actors, and attempt actors should be real staff in `registry.yaml` with an email address, or the field value should be the staff email directly. A new backlog task may keep `assigned_to` empty and use `role` as the placeholder until someone explicitly assigns the work; before active execution, replace the role-only placeholder with a staff email.
+
 Read `references/role-workflows.md` when deciding which fields a role may change.
 
 ## Common User Intents

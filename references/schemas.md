@@ -66,6 +66,8 @@ Required top-level fields:
 - `docs`
 - `assets`
 
+`people` should list real staff with stable email addresses. Task assignees, reviewers, event actors, and output-attempt actors should use either the staff email directly or a name that resolves to a `people` entry with an email. A backlog task may leave `assigned_to` blank and use `role` as a placeholder until the task is explicitly assigned.
+
 ## Project
 
 ```json
@@ -138,7 +140,7 @@ Every implementation repo that reviewers may need to inspect should be listed in
   "id": "TASK1",
   "project_id": "PROJ1",
   "title": "Implement tutorial analytics",
-  "assigned_to": "Kenneth",
+  "assigned_to": "kenneth@example.com",
   "role": "Eng",
   "status": "Backlog",
   "checkpoint": "Drafting",
@@ -149,7 +151,7 @@ Every implementation repo that reviewers may need to inspect should be listed in
   "release_target": "",
   "estimate": "",
   "risk": "",
-  "reviewer": "Maya",
+  "reviewer": "maya@example.com",
   "expected_output": "Pull Request",
   "acceptance_criteria": ["Events are documented", "Tests pass"],
   "dependencies": [],
@@ -168,6 +170,12 @@ Every implementation repo that reviewers may need to inspect should be listed in
 ```
 
 New tasks should be folder-based. `task.yaml` is durable state, `notes.md` is task-local context, `outputs.md` stores submitted artifacts and verification notes, and `attachments/` is only for small local references.
+
+For assignment:
+
+- `assigned_to`: staff email or a person name that resolves to `registry.people[].email`.
+- `role`: allowed as the placeholder before explicit assignment, especially for backlog planning.
+- `reviewer`: staff email or resolvable person name when review ownership is known.
 
 For code tasks:
 

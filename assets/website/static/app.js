@@ -2,7 +2,8 @@ const state = {
   data: null,
   query: "",
   status: "",
-  myWorkOwner: ""
+  myWorkOwner: "",
+  selectedTaskId: ""
 };
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +34,172 @@ function matchesQuery(item) {
   return JSON.stringify(item).toLowerCase().includes(query);
 }
 
+function people() {
+  return state.data ? (state.data.people || []) : [];
+}
+
+function taskById(taskId) {
+  return (state.data?.tasks || []).find((task) => task.id === taskId) || null;
+}
+
+function personLabel(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return "";
+  const lower = clean.toLowerCase();
+  const person = people().find((item) => {
+    const email = String(item.email || "").toLowerCase();
+    const name = String(item.name || "").toLowerCase();
+    return lower === email || lower === name || lower === `${name} <${email}>`;
+  });
+  if (!person) return clean;
+  return person.email ? `${person.name || person.email} <${person.email}>` : (person.name || clean);
+}
+
+function identityValues(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return new Set();
+  const lower = clean.toLowerCase();
+  const values = new Set([lower]);
+  const emailMatch = /<([^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)>/.exec(clean) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean) ? [clean, clean] : null);
+  if (emailMatch) values.add(emailMatch[1].toLowerCase());
+  for (const person of people()) {
+    const email = String(person.email || "").toLowerCase();
+    const name = String(person.name || "").toLowerCase();
+    if (lower === email || lower === name || lower === `${name} <${email}>`) {
+      if (email) values.add(email);
+      if (name) values.add(name);
+    }
+  }
+  return values;
+}
+
+function identityMatches(candidate, query) {
+  const queryValues = identityValues(query);
+  if (!queryValues.size) return true;
+  const candidateValues = identityValues(candidate);
+  return [...queryValues].some((value) => candidateValues.has(value));
+}
+
+function taskOwnerLabel(task) {
+  if (task.assigned_to) return personLabel(task.assigned_to);
+  if (task.role) return `Role needed: ${task.role}`;
+  return "Unassigned";
+}
+
+function compactMeta(items) {
+  return items.filter((item) => item && item.value).map((item) => `
+    <span class="meta-pill"><span>${escapeHtml(item.label)}</span>${escapeHtml(item.value)}</span>
+  `).join("");
+}
+
+function listLabel(value) {
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value || "");
+}
+
+function linkOrText(value, fallback = "Open") {
+  const clean = String(value || "").trim();
+  if (!clean) return "";
+  try {
+    const url = new URL(clean);
+    if (["http:", "https:"].includes(url.protocol)) {
+      return `<a href="${escapeHtml(clean)}" target="_blank" rel="noreferrer">${escapeHtml(fallback)}</a>`;
+    }
+  } catch {
+    return escapeHtml(clean);
+  }
+  return escapeHtml(clean);
+}
+
+function navTo(viewName) {
+  document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewName));
+  document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
+  $(`${viewName}View`).classList.add("active");
+}
+
+function setFormField(formId, name, value) {
+  const form = $(formId);
+  if (!form) return;
+  const field = form.elements[name];
+  if (field) field.value = value || "";
+}
+
+function selectedActor(task) {
+  return task.assigned_to || "";
+}
+
+function renderSelectedTaskSummary() {
+  const task = taskById(state.selectedTaskId);
+  const target = $("selectedTaskSummary");
+  if (!target) return;
+  if (!task) {
+    target.innerHTML = `<strong>No task selected</strong><span>Select a task to prefill update forms.</span>`;
+    return;
+  }
+  target.innerHTML = `
+    <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
+    <span>${escapeHtml(taskOwnerLabel(task))} / ${escapeHtml(task.status || "Backlog")} / ${escapeHtml(task.expected_output || "No expected output")}</span>
+    <p>${escapeHtml(task.user_update || task.blocker || task.path || "")}</p>
+  `;
+}
+
+function selectTaskForUpdate(taskId, openUpdates = true) {
+  const task = taskById(taskId);
+  if (!task) return;
+  state.selectedTaskId = task.id;
+  const picker = $("updateTaskPicker");
+  if (picker) picker.value = task.id;
+  const actor = selectedActor(task);
+  const reviewer = task.reviewer || "";
+  const fieldValues = {
+    updateTaskForm: {
+      task_id: task.id,
+      actor,
+      status: task.status || "",
+      checkpoint: task.checkpoint || "",
+      target_repo: task.target_repo || "",
+      output: task.output || "",
+      output_commit: task.output_commit || "",
+      blocker: task.blocker || "",
+      milestone: task.milestone || "",
+      feature_area: task.feature_area || "",
+      reviewer,
+      user_update: task.user_update || ""
+    },
+    submitOutputForm: { task_id: task.id, actor, target_repo: task.target_repo || "", output: task.output || "", output_commit: task.output_commit || "" },
+    reviewTaskForm: { task_id: task.id, reviewer },
+    recordAttemptForm: { task_id: task.id, actor, target_repo: task.target_repo || "", output: task.output || "", output_commit: task.output_commit || "" },
+    verificationFailedForm: { task_id: task.id, reviewer, output: task.output || "" },
+    withdrawOutputForm: { task_id: task.id, actor, output: task.output || "" },
+    supersedeOutputForm: { task_id: task.id, actor, old_output: task.output || "" },
+    cancelReviewForm: { task_id: task.id, actor: reviewer || actor },
+    addEventForm: { task_id: task.id, actor }
+  };
+  for (const [formId, values] of Object.entries(fieldValues)) {
+    for (const [name, value] of Object.entries(values)) setFormField(formId, name, value);
+  }
+  renderSelectedTaskSummary();
+  if (openUpdates) navTo("updates");
+}
+
+function renderDatalists() {
+  const taskOptions = $("taskOptions");
+  if (taskOptions && state.data) {
+    taskOptions.innerHTML = state.data.tasks.map((task) => `
+      <option value="${escapeHtml(task.id)}">${escapeHtml(task.title || "")}</option>
+    `).join("");
+  }
+  const staffOptions = $("staffOptions");
+  if (staffOptions && state.data) {
+    staffOptions.innerHTML = people().flatMap((person) => {
+      const rows = [];
+      if (person.email) rows.push(`<option value="${escapeHtml(person.email)}">${escapeHtml(person.name || person.email)} / ${escapeHtml(person.role || "")}</option>`);
+      if (person.name) rows.push(`<option value="${escapeHtml(person.name)}">${escapeHtml(person.role || "")}${person.email ? ` / ${escapeHtml(person.email)}` : ""}</option>`);
+      return rows;
+    }).join("");
+  }
+}
+
 function filteredTasks() {
   if (!state.data) return [];
   return state.data.tasks.filter((task) => {
@@ -43,25 +210,37 @@ function filteredTasks() {
 
 function renderTasksTable() {
   const tasks = filteredTasks().slice(0, 18);
-  $("taskResultCount").textContent = `${filteredTasks().length} shown`;
+  $("taskResultCount").textContent = `${filteredTasks().length} matching`;
   $("taskRows").innerHTML = tasks.map((task) => `
     <tr>
       <td><strong>${escapeHtml(task.id)}</strong></td>
-      <td>${escapeHtml(task.title || "")}<br><small>${escapeHtml(task.project_name || "")}</small></td>
-      <td>${escapeHtml(task.assigned_to || "")}</td>
+      <td>${escapeHtml(task.title || "")}<br><small>${escapeHtml(task.project_name || "")}${task.path ? ` / ${escapeHtml(task.path)}` : ""}</small></td>
+      <td>${escapeHtml(taskOwnerLabel(task))}</td>
       <td><span class="badge ${statusClass(task.status)}">${escapeHtml(task.status || "Backlog")}</span></td>
-      <td>${escapeHtml(task.expected_output || "")}</td>
+      <td>${escapeHtml(task.expected_output || "")}${task.output ? `<br><small>${linkOrText(task.output, "Output")}</small>` : ""}</td>
+      <td><button type="button" class="inline-action" data-task-action="update" data-task-id="${escapeHtml(task.id)}">Update</button></td>
     </tr>
-  `).join("") || `<tr><td colspan="5">No matching tasks.</td></tr>`;
+  `).join("") || `<tr><td colspan="6">No matching tasks.</td></tr>`;
 }
 
 function renderTaskBoard() {
   const tasks = filteredTasks();
   $("taskBoard").innerHTML = tasks.map((task) => `
     <article class="task-card">
-      <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
-      <span>${escapeHtml(task.assigned_to || "Unassigned")} / ${escapeHtml(task.expected_output || "No expected output")}</span>
-      <p><span class="badge ${statusClass(task.status)}">${escapeHtml(task.status || "Backlog")}</span></p>
+      <div class="item-title">
+        <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
+        <span class="badge ${statusClass(task.status)}">${escapeHtml(task.status || "Backlog")}</span>
+      </div>
+      <div class="meta-row">${compactMeta([
+        { label: "Owner", value: taskOwnerLabel(task) },
+        { label: "Output", value: task.expected_output || "TBD" },
+        { label: "Repo", value: task.target_repo || "" },
+        { label: "Milestone", value: task.milestone || "" },
+        { label: "Reviewer", value: personLabel(task.reviewer || "") }
+      ])}</div>
+      <p>${escapeHtml(task.user_update || task.blocker || "No current update.")}</p>
+      ${task.output ? `<p class="item-link">${linkOrText(task.output, "Open output")}${task.output_commit ? ` / ${escapeHtml(task.output_commit.slice(0, 12))}` : ""}</p>` : ""}
+      <div class="action-row"><button type="button" data-task-action="update" data-task-id="${escapeHtml(task.id)}">Update</button></div>
     </article>
   `).join("") || `<div class="task-card"><strong>No tasks</strong><span>Adjust search or filters.</span></div>`;
 }
@@ -70,8 +249,18 @@ function renderDocs() {
   const docs = state.data ? state.data.docs.filter(matchesQuery) : [];
   $("docList").innerHTML = docs.map((doc) => `
     <article class="doc-row">
-      <strong>${escapeHtml(doc.id)} - ${escapeHtml(doc.title || doc.type)}</strong>
-      <span>${escapeHtml(doc.path)}${doc.sha256 ? ` / ${escapeHtml(doc.sha256.slice(0, 12))}` : ""}</span>
+      <div class="item-title">
+        <strong>${escapeHtml(doc.id)} - ${escapeHtml(doc.title || doc.type)}</strong>
+        <span class="badge">${escapeHtml(doc.type || "doc")}</span>
+      </div>
+      <div class="meta-row">${compactMeta([
+        { label: "Owner", value: personLabel(doc.owner || "") },
+        { label: "Status", value: doc.status || "draft" },
+        { label: "Path", value: doc.path || "" },
+        { label: "Hash", value: doc.sha256 ? doc.sha256.slice(0, 12) : "" }
+      ])}</div>
+      ${doc.headings?.length ? `<p>${escapeHtml(doc.headings.slice(0, 6).join(" / "))}</p>` : ""}
+      ${doc.snippet ? `<p class="item-snippet">${escapeHtml(doc.snippet)}</p>` : ""}
     </article>
   `).join("") || `<div class="doc-row"><strong>No docs found</strong><span>Run compile or initialize the repo.</span></div>`;
 }
@@ -80,8 +269,17 @@ function renderAssets() {
   const assets = state.data ? (state.data.assets || []).filter(matchesQuery) : [];
   $("assetList").innerHTML = assets.map((asset) => `
     <article class="doc-row">
-      <strong>${escapeHtml(asset.id)} - ${escapeHtml(asset.title || asset.type)}</strong>
-      <span>${escapeHtml(asset.type || "asset")} / ${escapeHtml(asset.owner || "Unowned")} / ${escapeHtml(asset.source_url || asset.path || "No link")}</span>
+      <div class="item-title">
+        <strong>${escapeHtml(asset.id)} - ${escapeHtml(asset.title || asset.type)}</strong>
+        <span class="badge">${escapeHtml(asset.type || "asset")}</span>
+      </div>
+      <div class="meta-row">${compactMeta([
+        { label: "Owner", value: personLabel(asset.owner || "") },
+        { label: "Status", value: asset.status || "" },
+        { label: "Storage", value: asset.storage || "" },
+        { label: "Used by", value: listLabel(asset.used_by) }
+      ])}</div>
+      <p class="item-link">${linkOrText(asset.source_url || asset.path || "", asset.source_url ? "Open asset" : "Repo path") || "No link recorded."}</p>
     </article>
   `).join("") || `<div class="doc-row"><strong>No assets found</strong><span>Register mockups, videos, builds, art, and external files.</span></div>`;
 }
@@ -91,7 +289,7 @@ function renderEvents() {
   $("eventList").innerHTML = events.map((event) => `
     <article class="event">
       <strong>${escapeHtml(event.task_id || "")} ${escapeHtml(event.event_type || "event")}</strong>
-      <span>${escapeHtml(event.actor || "system")} / ${escapeHtml(event.created_at || "")}</span>
+      <span>${escapeHtml(personLabel(event.actor || "system"))} / ${escapeHtml(event.created_at || "")}</span>
       <p>${escapeHtml(event.message || "")}</p>
     </article>
   `).join("") || `<div class="event"><strong>No recent events</strong><span>Task activity will appear here.</span></div>`;
@@ -102,32 +300,34 @@ function renderReviewQueue() {
   $("reviewQueueList").innerHTML = queue.map((item) => `
     <article class="event">
       <strong>${escapeHtml(item.task_id || "")} ${escapeHtml((item.reasons || []).join(", "))}</strong>
-      <span>${escapeHtml(item.assigned_to || "Unassigned")} / ${escapeHtml(item.reviewer || "No reviewer")} / ${escapeHtml(item.status || "")}</span>
+      <span>${escapeHtml(personLabel(item.assigned_to || "Unassigned"))} / ${escapeHtml(personLabel(item.reviewer || "No reviewer"))} / ${escapeHtml(item.status || "")}</span>
       <p>${escapeHtml(item.title || "")}${item.output ? ` / ${escapeHtml(item.output)}` : ""}</p>
     </article>
   `).join("") || `<div class="event"><strong>No review queue items</strong><span>Submitted, failed, withdrawn, and cancelled reviews will appear here.</span></div>`;
 }
 
 function renderMyWork() {
-  const owner = state.myWorkOwner.trim().toLowerCase();
+  const owner = state.myWorkOwner.trim();
   const open = (state.data ? state.data.tasks : []).filter((task) => !["Done", "Verified", "Iceboxed"].includes(task.status));
-  const assigned = open.filter((task) => !owner || String(task.assigned_to || "").toLowerCase() === owner);
+  const assigned = open.filter((task) => identityMatches(task.assigned_to || "", owner));
   const review = open.filter((task) => {
-    const reviewerMatch = !owner || String(task.reviewer || "").toLowerCase() === owner;
+    const reviewerMatch = identityMatches(task.reviewer || "", owner);
     return reviewerMatch && (task.status === "In Review" || String(task.reviewer || "").trim());
   });
   $("myAssignedList").innerHTML = assigned.map((task) => `
     <article class="task-card">
       <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
-      <span>${escapeHtml(task.assigned_to || "Unassigned")} / ${escapeHtml(task.status || "Backlog")} / ${escapeHtml(task.expected_output || "No expected output")}</span>
+      <span>${escapeHtml(taskOwnerLabel(task))} / ${escapeHtml(task.status || "Backlog")} / ${escapeHtml(task.expected_output || "No expected output")}</span>
       <p>${escapeHtml(task.user_update || task.blocker || task.path || "")}</p>
+      <div class="action-row"><button type="button" data-task-action="update" data-task-id="${escapeHtml(task.id)}">Update</button></div>
     </article>
   `).join("") || `<div class="task-card"><strong>No assigned work</strong><span>Enter an assignee name or clear the filter.</span></div>`;
   $("myReviewList").innerHTML = review.map((task) => `
     <article class="task-card">
       <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
-      <span>${escapeHtml(task.reviewer || "No reviewer")} / ${escapeHtml(task.status || "Backlog")} / ${escapeHtml(task.target_repo || "No target repo")}</span>
+      <span>${escapeHtml(personLabel(task.reviewer || "No reviewer"))} / ${escapeHtml(task.status || "Backlog")} / ${escapeHtml(task.target_repo || "No target repo")}</span>
       <p>${escapeHtml(task.output || task.user_update || task.path || "")}${task.output_commit ? ` / ${escapeHtml(task.output_commit.slice(0, 12))}` : ""}</p>
+      <div class="action-row"><button type="button" data-task-action="update" data-task-id="${escapeHtml(task.id)}">Update</button></div>
     </article>
   `).join("") || `<div class="task-card"><strong>No review work</strong><span>In-review tasks and explicit reviewer assignments appear here.</span></div>`;
 }
@@ -137,7 +337,7 @@ function renderHealth() {
   $("blockedTaskList").innerHTML = blocked.map((task) => `
     <article class="event">
       <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "")}</strong>
-      <span>${escapeHtml(task.assigned_to || "Unassigned")} / ${escapeHtml(task.status || "")}</span>
+      <span>${escapeHtml(taskOwnerLabel(task))} / ${escapeHtml(task.status || "")}</span>
       <p>${escapeHtml(task.blocker || task.user_update || "No blocker detail")}</p>
     </article>
   `).join("") || `<div class="event"><strong>No blocked tasks</strong><span>Blocked tasks with blocker text will appear here.</span></div>`;
@@ -146,7 +346,7 @@ function renderHealth() {
   $("staleWorkList").innerHTML = stale.map((task) => `
     <article class="event">
       <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "")}</strong>
-      <span>${escapeHtml(task.assigned_to || "Unassigned")} / ${escapeHtml(task.status || "")} / ${task.age_days === null ? "no events" : `${escapeHtml(task.age_days)} days`}</span>
+      <span>${escapeHtml(taskOwnerLabel(task))} / ${escapeHtml(task.status || "")} / ${task.age_days === null ? "no events" : `${escapeHtml(task.age_days)} days`}</span>
       <p>${escapeHtml(task.latest_event?.message || task.user_update || task.path || "")}</p>
     </article>
   `).join("") || `<div class="event"><strong>No stale work</strong><span>Open tasks without recent events will appear here.</span></div>`;
@@ -155,7 +355,7 @@ function renderHealth() {
   $("featureProposalList").innerHTML = features.map((doc) => `
     <article class="doc-row">
       <strong>${escapeHtml(doc.id)} - ${escapeHtml(doc.title || "Feature proposal")}</strong>
-      <span>${escapeHtml(doc.status || "draft")} / ${escapeHtml(doc.owner || "Unowned")} / ${escapeHtml(doc.path || "")}</span>
+      <span>${escapeHtml(doc.status || "draft")} / ${escapeHtml(personLabel(doc.owner || "Unowned"))} / ${escapeHtml(doc.path || "")}</span>
     </article>
   `).join("") || `<div class="doc-row"><strong>No feature proposals awaiting decision</strong><span>Use Create > Feature Proposal PR/MR to start one.</span></div>`;
 
@@ -185,6 +385,7 @@ function renderSummary() {
 
 function render() {
   renderSummary();
+  renderDatalists();
   renderTasksTable();
   renderTaskBoard();
   renderDocs();
@@ -193,6 +394,7 @@ function render() {
   renderReviewQueue();
   renderMyWork();
   renderHealth();
+  renderSelectedTaskSummary();
 }
 
 async function loadData() {
@@ -221,13 +423,12 @@ async function submitUpdate(payload) {
   $("updateResult").textContent = JSON.stringify(result, null, 2);
 }
 
-document.querySelectorAll(".nav-item").forEach((button) => {
-  button.addEventListener("click", () => {
-    document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
-    document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
-    button.classList.add("active");
-    $(`${button.dataset.view}View`).classList.add("active");
-  });
+document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => navTo(button.dataset.view)));
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-task-action='update']");
+  if (!button) return;
+  selectTaskForUpdate(button.dataset.taskId);
 });
 
 $("refreshButton").addEventListener("click", loadData);
@@ -243,6 +444,7 @@ $("myWorkOwner").addEventListener("input", (event) => {
   state.myWorkOwner = event.target.value;
   renderMyWork();
 });
+$("updateTaskPicker").addEventListener("change", (event) => selectTaskForUpdate(event.target.value, false));
 
 $("createTaskForm").addEventListener("submit", (event) => {
   event.preventDefault();

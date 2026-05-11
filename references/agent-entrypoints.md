@@ -8,7 +8,7 @@ Use this file when the user asks normal day-to-day project questions.
 2. Run:
 
 ```powershell
-git_pm.py my-tasks --repo . --user "<name>"
+git_pm.py my-tasks --repo . --user "<staff email or name>"
 ```
 
 3. Read each returned task folder:
@@ -55,8 +55,10 @@ After the proposal is approved, create milestones and tasks:
 ```powershell
 git_pm.py create-milestone --repo . --project-id PROJ1 --title "Feature Milestone" --owner "Maya"
 git_pm.py register-repo --repo . --project-id PROJ1 --name game-client --provider github --url "https://github.com/example/game-client" --default-branch main --role "client/gameplay"
-git_pm.py create-task --repo . --project-id PROJ1 --title "Implement client events" --assigned-to "Paul" --role "Programmer" --expected-output "Pull Request" --target-repo "game-client"
+git_pm.py create-task --repo . --project-id PROJ1 --title "Implement client events" --assigned-to "paul@example.com" --role "Programmer" --expected-output "Pull Request" --target-repo "game-client"
 ```
+
+If the manager knows the needed discipline but not the owner, create the backlog task with `--role` and no `--assigned-to`, then assign a staff email before execution starts.
 
 ## Manager Wants Project Health
 
