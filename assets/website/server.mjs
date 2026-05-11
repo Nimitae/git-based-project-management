@@ -108,11 +108,11 @@ async function fileSha256(filePath) {
 }
 
 function parseFrontmatter(text) {
-  if (!text.startsWith("---\n")) return [{}, text];
-  const end = text.indexOf("\n---", 4);
-  if (end === -1) return [{}, text];
-  const raw = text.slice(4, end).trim();
-  const body = text.slice(end + 4).replace(/^\n+/, "");
+  const clean = String(text || "").replace(/^\uFEFF/, "");
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(clean);
+  if (!match) return [{}, clean];
+  const raw = match[1].trim();
+  const body = clean.slice(match[0].length).replace(/^\r?\n+/, "");
   const data = {};
   for (const line of raw.split(/\r?\n/)) {
     const index = line.indexOf(":");
@@ -357,7 +357,7 @@ async function collectDocs(registry) {
     const headings = body.split(/\r?\n/).filter((line) => line.startsWith("## ")).map((line) => line.slice(3).trim());
     const title = markdownTitle(body, row.title || docId);
     const plain = body.split(/\r?\n/).map(cleanMarkdownLine).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-    docs.push({ id: docId, project_id: row.project_id || "", type: row.doc_type || frontmatter.type || "", title, path: row.path || "", owner: row.owner || "", status: row.status || "", sha256: await fileSha256(full), headings, preview: markdownPreview(body, title), snippet: plain.slice(0, 280), search_text: plain.slice(0, 12000) });
+    docs.push({ id: docId, project_id: row.project_id || "", type: row.doc_type || frontmatter.type || "", title, path: row.path || "", owner: row.owner || "", status: row.status || "", sha256: await fileSha256(full), headings, preview: markdownPreview(body, title), snippet: plain.slice(0, 280), search_text: plain.slice(0, 12000), markdown: body });
   }
   return docs;
 }

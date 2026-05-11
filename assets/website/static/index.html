@@ -158,12 +158,23 @@
         </section>
 
         <section class="view" id="docsView">
-          <section class="panel wide">
+          <section class="panel wide" id="docListPanel">
             <div class="panel-header">
               <h2>Git Docs</h2>
               <span>Canonical Markdown/YAML paths</span>
             </div>
             <div id="docList" class="doc-list"></div>
+          </section>
+          <section class="panel wide hidden" id="docReaderPanel">
+            <div class="panel-header doc-reader-header">
+              <button id="docBackButton" type="button">Back</button>
+              <div>
+                <h2 id="docReaderTitle">Document</h2>
+                <span id="docReaderPath"></span>
+              </div>
+            </div>
+            <div id="docReaderMeta" class="doc-reader-meta"></div>
+            <article id="docReaderBody" class="markdown-body"></article>
           </section>
         </section>
 

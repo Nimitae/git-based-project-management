@@ -217,13 +217,12 @@ def file_sha256(path: Path) -> str:
 
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
-    if not text.startswith("---\n"):
-        return {}, text
-    end = text.find("\n---", 4)
-    if end == -1:
-        return {}, text
-    raw = text[4:end].strip()
-    body = text[end + 4 :].lstrip("\n")
+    clean = (text or "").lstrip("\ufeff")
+    match = re.match(r"^---\r?\n([\s\S]*?)\r?\n---\r?\n?", clean)
+    if not match:
+        return {}, clean
+    raw = match.group(1).strip()
+    body = clean[match.end() :].lstrip("\r\n")
     data = {}
     for line in raw.splitlines():
         if ":" not in line:
@@ -1378,6 +1377,7 @@ def collect_docs(repo: Path, registry: dict) -> list[dict]:
                 "preview": markdown_preview(body, title),
                 "snippet": plain[:280],
                 "search_text": plain[:12000],
+                "markdown": body,
             }
         )
     return docs

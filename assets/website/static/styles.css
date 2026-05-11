@@ -170,6 +170,10 @@ textarea {
   display: block;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -314,6 +318,16 @@ a {
   border-radius: 8px;
   padding: 10px;
   background: #fff;
+}
+
+.doc-row {
+  cursor: pointer;
+}
+
+.doc-row:hover,
+.doc-row:focus {
+  border-color: var(--accent);
+  outline: none;
 }
 
 .task-card,
@@ -479,6 +493,139 @@ a {
 
 .update-picker {
   margin-bottom: 14px;
+}
+
+.doc-reader-header {
+  justify-content: flex-start;
+}
+
+.doc-reader-header button {
+  flex: 0 0 auto;
+}
+
+.doc-reader-header div {
+  min-width: 0;
+}
+
+.doc-reader-header h2 {
+  overflow-wrap: anywhere;
+}
+
+.doc-reader-meta {
+  padding: 14px 18px 0;
+}
+
+.markdown-body {
+  padding: 18px;
+  max-width: 1120px;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  margin: 22px 0 8px;
+  line-height: 1.2;
+}
+
+.markdown-body h1:first-child,
+.markdown-body h2:first-child,
+.markdown-body h3:first-child {
+  margin-top: 0;
+}
+
+.markdown-body h1 {
+  font-size: 26px;
+}
+
+.markdown-body h2 {
+  border-bottom: 1px solid var(--line);
+  font-size: 21px;
+  padding-bottom: 6px;
+}
+
+.markdown-body h3 {
+  font-size: 17px;
+}
+
+.markdown-body p,
+.markdown-body li,
+.markdown-body blockquote {
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.markdown-body p {
+  margin: 0 0 12px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 14px;
+  padding-left: 24px;
+}
+
+.markdown-body blockquote {
+  margin: 0 0 14px;
+  border-left: 4px solid var(--line);
+  padding: 8px 12px;
+  color: var(--muted);
+  background: #f8fafc;
+}
+
+.markdown-body code {
+  background: #eef2f7;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+}
+
+.markdown-body pre {
+  border-radius: 8px;
+  margin: 0 0 16px;
+  min-height: 0;
+  padding: 14px;
+  white-space: pre;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.markdown-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0 0 16px;
+  overflow-x: auto;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  min-width: 720px;
+  width: 100%;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.markdown-body th {
+  background: #f8fafc;
+  color: var(--text);
+  font-size: 13px;
+  text-transform: none;
+}
+
+.markdown-body tr:last-child td {
+  border-bottom: 0;
 }
 
 .form-stack {

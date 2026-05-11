@@ -3,7 +3,8 @@ const state = {
   query: "",
   status: "",
   myWorkOwner: "",
-  selectedTaskId: ""
+  selectedTaskId: "",
+  selectedDocId: ""
 };
 
 const $ = (id) => document.getElementById(id);
@@ -40,6 +41,10 @@ function people() {
 
 function taskById(taskId) {
   return (state.data?.tasks || []).find((task) => task.id === taskId) || null;
+}
+
+function docById(docId) {
+  return (state.data?.docs || []).find((doc) => doc.id === docId) || null;
 }
 
 function personLabel(value) {
@@ -123,6 +128,159 @@ function shortPath(pathValue) {
   const clean = String(pathValue || "");
   if (clean.length <= 96) return clean;
   return `...${clean.slice(-93)}`;
+}
+
+function safeHref(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return "";
+  try {
+    const url = new URL(clean, window.location.origin);
+    return ["http:", "https:", "mailto:"].includes(url.protocol) ? clean : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderInlineMarkdown(value) {
+  const tokens = [];
+  const token = (html) => {
+    const key = `%%MDTOKEN${tokens.length}%%`;
+    tokens.push([key, html]);
+    return key;
+  };
+  let text = String(value || "");
+  text = text.replace(/`([^`]+)`/g, (_match, code) => token(`<code>${escapeHtml(code)}</code>`));
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => {
+    const safe = safeHref(href);
+    if (!safe) return escapeHtml(label);
+    return token(`<a href="${escapeHtml(safe)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`);
+  });
+  let html = escapeHtml(text)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  for (const [key, replacement] of tokens) html = html.replaceAll(key, replacement);
+  return html;
+}
+
+function isTableSeparator(line) {
+  const cells = splitTableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{2,}:?$/.test(cell.trim()));
+}
+
+function splitTableRow(line) {
+  let clean = String(line || "").trim();
+  if (clean.startsWith("|")) clean = clean.slice(1);
+  if (clean.endsWith("|")) clean = clean.slice(0, -1);
+  return clean.split("|").map((cell) => cell.trim());
+}
+
+function renderMarkdownTable(lines, startIndex) {
+  const header = splitTableRow(lines[startIndex]);
+  const rows = [];
+  let index = startIndex + 2;
+  while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+    const cells = splitTableRow(lines[index]);
+    while (cells.length < header.length) cells.push("");
+    rows.push(cells.slice(0, header.length));
+    index += 1;
+  }
+  return {
+    html: `
+      <div class="markdown-table-wrap">
+        <table>
+          <thead><tr>${header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>
+          <tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>
+    `,
+    nextIndex: index
+  };
+}
+
+function isMarkdownBlockStart(lines, index) {
+  const line = lines[index] || "";
+  const next = lines[index + 1] || "";
+  return /^#{1,6}\s+/.test(line) ||
+    /^```/.test(line.trim()) ||
+    /^>\s?/.test(line) ||
+    /^\s*[-*+]\s+/.test(line) ||
+    /^\s*\d+\.\s+/.test(line) ||
+    (line.includes("|") && isTableSeparator(next));
+}
+
+function renderMarkdown(markdown) {
+  const lines = String(markdown || "").replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+    const fence = /^```(\w+)?/.exec(trimmed);
+    if (fence) {
+      const code = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        code.push(lines[index]);
+        index += 1;
+      }
+      index += index < lines.length ? 1 : 0;
+      html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+      continue;
+    }
+    const heading = /^(#{1,6})\s+(.*)$/.exec(trimmed);
+    if (heading) {
+      const level = Math.min(heading[1].length, 4);
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      index += 1;
+      continue;
+    }
+    if (line.includes("|") && isTableSeparator(lines[index + 1] || "")) {
+      const table = renderMarkdownTable(lines, index);
+      html.push(table.html);
+      index = table.nextIndex;
+      continue;
+    }
+    if (/^>\s?/.test(trimmed)) {
+      const quote = [];
+      while (index < lines.length && /^>\s?/.test(lines[index].trim())) {
+        quote.push(lines[index].trim().replace(/^>\s?/, ""));
+        index += 1;
+      }
+      html.push(`<blockquote>${quote.map(renderInlineMarkdown).join("<br>")}</blockquote>`);
+      continue;
+    }
+    if (/^\s*[-*+]\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\s*[-*+]\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*[-*+]\s+/, ""));
+        index += 1;
+      }
+      html.push(`<ul>${items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ul>`);
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*\d+\.\s+/, ""));
+        index += 1;
+      }
+      html.push(`<ol>${items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ol>`);
+      continue;
+    }
+    const paragraph = [trimmed];
+    index += 1;
+    while (index < lines.length && lines[index].trim() && !isMarkdownBlockStart(lines, index)) {
+      paragraph.push(lines[index].trim());
+      index += 1;
+    }
+    html.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+  }
+  return html.join("");
 }
 
 function linkOrText(value, fallback = "Open") {
@@ -276,7 +434,7 @@ function renderTaskBoard() {
 function renderDocs() {
   const docs = state.data ? state.data.docs.filter(matchesQuery) : [];
   $("docList").innerHTML = docs.map((doc) => `
-    <article class="doc-row">
+    <article class="doc-row" data-doc-action="open" data-doc-id="${escapeHtml(doc.id)}" tabindex="0">
       <div class="item-title">
         <strong>${escapeHtml(labeledTitle(doc.id, doc.title, doc.type))}</strong>
         <span class="badge">${escapeHtml(doc.type || "doc")}</span>
@@ -289,8 +447,40 @@ function renderDocs() {
       ${doc.preview || doc.snippet ? `<p class="doc-preview">${escapeHtml(doc.preview || doc.snippet)}</p>` : `<p class="doc-preview muted">No readable preview available.</p>`}
       ${doc.headings?.length ? `<p class="section-line"><span>Sections</span>${escapeHtml(doc.headings.slice(0, 6).join(" / "))}</p>` : ""}
       <p class="path-line"><span>Path</span><code>${escapeHtml(shortPath(doc.path || ""))}</code></p>
+      <div class="action-row"><button type="button" data-doc-action="open" data-doc-id="${escapeHtml(doc.id)}">Open full doc</button></div>
     </article>
   `).join("") || `<div class="doc-row"><strong>No docs found</strong><span>Run compile or initialize the repo.</span></div>`;
+  renderDocReader();
+}
+
+function openDocReader(docId) {
+  if (!docById(docId)) return;
+  state.selectedDocId = docId;
+  renderDocReader();
+}
+
+function closeDocReader() {
+  state.selectedDocId = "";
+  renderDocReader();
+}
+
+function renderDocReader() {
+  const listPanel = $("docListPanel");
+  const readerPanel = $("docReaderPanel");
+  if (!listPanel || !readerPanel) return;
+  const doc = docById(state.selectedDocId);
+  listPanel.classList.toggle("hidden", Boolean(doc));
+  readerPanel.classList.toggle("hidden", !doc);
+  if (!doc) return;
+  $("docReaderTitle").textContent = labeledTitle(doc.id, doc.title, doc.type);
+  $("docReaderPath").textContent = doc.path || "";
+  $("docReaderMeta").innerHTML = detailList([
+    { label: "Owner", value: personLabel(doc.owner || "") },
+    { label: "Status", value: doc.status || "draft" },
+    { label: "Type", value: doc.type || "doc" },
+    { label: "Hash", value: doc.sha256 ? doc.sha256.slice(0, 12) : "" }
+  ]);
+  $("docReaderBody").innerHTML = renderMarkdown(doc.markdown || doc.snippet || "");
 }
 
 function renderAssets() {
@@ -455,8 +645,18 @@ document.querySelectorAll(".nav-item").forEach((button) => button.addEventListen
 
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-task-action='update']");
-  if (!button) return;
-  selectTaskForUpdate(button.dataset.taskId);
+  if (button) {
+    selectTaskForUpdate(button.dataset.taskId);
+    return;
+  }
+  const docTarget = event.target.closest("[data-doc-action='open']");
+  if (docTarget) openDocReader(docTarget.dataset.docId);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  const docTarget = event.target.closest("[data-doc-action='open']");
+  if (docTarget) openDocReader(docTarget.dataset.docId);
 });
 
 $("refreshButton").addEventListener("click", loadData);
@@ -473,6 +673,7 @@ $("myWorkOwner").addEventListener("input", (event) => {
   renderMyWork();
 });
 $("updateTaskPicker").addEventListener("change", (event) => selectTaskForUpdate(event.target.value, false));
+$("docBackButton").addEventListener("click", closeDocReader);
 
 $("createTaskForm").addEventListener("submit", (event) => {
   event.preventDefault();

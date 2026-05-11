@@ -17,6 +17,8 @@ Treat Git as the operating system:
 
 Keep implementation codebases in their own GitHub/GitLab repos. This management repo stores links, intent, tasks, reviews, and source-of-truth project metadata.
 
+It is acceptable and encouraged to add deterministic scripts, importers, compiled data, or website views when a project develops special navigation or reporting needs that the generic Project Hub does not cover. Examples include scripts that ingest user stories, trace requirements into tasks, or add website pages for project-specific catalogs. Keep these extensions reviewable, documented, validated, committed, and pushed with the rest of the Project Hub.
+
 ## Roles
 
 - Owner/Admin: initialize the repo, configure provider permissions, deploy the website, approve schema/policy changes.
