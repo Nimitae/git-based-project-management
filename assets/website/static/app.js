@@ -92,9 +92,37 @@ function compactMeta(items) {
   `).join("");
 }
 
+function detailList(items) {
+  const rows = items.filter((item) => item && item.value);
+  if (!rows.length) return "";
+  return `
+    <dl class="detail-list">
+      ${rows.map((item) => `
+        <div>
+          <dt>${escapeHtml(item.label)}</dt>
+          <dd>${item.html || escapeHtml(item.value)}</dd>
+        </div>
+      `).join("")}
+    </dl>
+  `;
+}
+
 function listLabel(value) {
   if (Array.isArray(value)) return value.join(", ");
   return String(value || "");
+}
+
+function labeledTitle(id, title, fallback) {
+  const clean = String(title || fallback || "").trim();
+  if (!id) return clean;
+  if (!clean) return id;
+  return clean.toLowerCase().startsWith(String(id).toLowerCase()) ? clean : `${id} - ${clean}`;
+}
+
+function shortPath(pathValue) {
+  const clean = String(pathValue || "");
+  if (clean.length <= 96) return clean;
+  return `...${clean.slice(-93)}`;
 }
 
 function linkOrText(value, fallback = "Open") {
@@ -228,18 +256,18 @@ function renderTaskBoard() {
   $("taskBoard").innerHTML = tasks.map((task) => `
     <article class="task-card">
       <div class="item-title">
-        <strong>${escapeHtml(task.id)} - ${escapeHtml(task.title || "Untitled task")}</strong>
+        <strong>${escapeHtml(labeledTitle(task.id, task.title, "Untitled task"))}</strong>
         <span class="badge ${statusClass(task.status)}">${escapeHtml(task.status || "Backlog")}</span>
       </div>
-      <div class="meta-row">${compactMeta([
+      ${detailList([
         { label: "Owner", value: taskOwnerLabel(task) },
-        { label: "Output", value: task.expected_output || "TBD" },
+        { label: "Expected output", value: task.expected_output || "TBD" },
         { label: "Repo", value: task.target_repo || "" },
         { label: "Milestone", value: task.milestone || "" },
         { label: "Reviewer", value: personLabel(task.reviewer || "") }
-      ])}</div>
-      <p>${escapeHtml(task.user_update || task.blocker || "No current update.")}</p>
-      ${task.output ? `<p class="item-link">${linkOrText(task.output, "Open output")}${task.output_commit ? ` / ${escapeHtml(task.output_commit.slice(0, 12))}` : ""}</p>` : ""}
+      ])}
+      <p class="item-snippet">${escapeHtml(task.user_update || task.blocker || "No current update.")}</p>
+      ${task.output ? `<p class="item-link"><span>Submitted output</span>${linkOrText(task.output, "Open output")}${task.output_commit ? ` <small>${escapeHtml(task.output_commit.slice(0, 12))}</small>` : ""}</p>` : ""}
       <div class="action-row"><button type="button" data-task-action="update" data-task-id="${escapeHtml(task.id)}">Update</button></div>
     </article>
   `).join("") || `<div class="task-card"><strong>No tasks</strong><span>Adjust search or filters.</span></div>`;
@@ -250,17 +278,17 @@ function renderDocs() {
   $("docList").innerHTML = docs.map((doc) => `
     <article class="doc-row">
       <div class="item-title">
-        <strong>${escapeHtml(doc.id)} - ${escapeHtml(doc.title || doc.type)}</strong>
+        <strong>${escapeHtml(labeledTitle(doc.id, doc.title, doc.type))}</strong>
         <span class="badge">${escapeHtml(doc.type || "doc")}</span>
       </div>
-      <div class="meta-row">${compactMeta([
+      ${detailList([
         { label: "Owner", value: personLabel(doc.owner || "") },
         { label: "Status", value: doc.status || "draft" },
-        { label: "Path", value: doc.path || "" },
         { label: "Hash", value: doc.sha256 ? doc.sha256.slice(0, 12) : "" }
-      ])}</div>
-      ${doc.headings?.length ? `<p>${escapeHtml(doc.headings.slice(0, 6).join(" / "))}</p>` : ""}
-      ${doc.snippet ? `<p class="item-snippet">${escapeHtml(doc.snippet)}</p>` : ""}
+      ])}
+      ${doc.preview || doc.snippet ? `<p class="doc-preview">${escapeHtml(doc.preview || doc.snippet)}</p>` : `<p class="doc-preview muted">No readable preview available.</p>`}
+      ${doc.headings?.length ? `<p class="section-line"><span>Sections</span>${escapeHtml(doc.headings.slice(0, 6).join(" / "))}</p>` : ""}
+      <p class="path-line"><span>Path</span><code>${escapeHtml(shortPath(doc.path || ""))}</code></p>
     </article>
   `).join("") || `<div class="doc-row"><strong>No docs found</strong><span>Run compile or initialize the repo.</span></div>`;
 }
