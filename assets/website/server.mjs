@@ -209,6 +209,21 @@ function projectRepoMatches(project, targetRepo) {
   return Boolean(target) && projectRepoKeys(project).has(target);
 }
 
+function emailFromActor(value) {
+  const clean = String(value || "").trim();
+  const angle = /<([^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)>/.exec(clean);
+  if (angle) return angle[1].toLowerCase();
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean) ? clean.toLowerCase() : "";
+}
+
+function actorHasStaffEmail(registry, value) {
+  const clean = String(value || "").trim();
+  if (!clean || ["unknown", "system"].includes(clean.toLowerCase())) return true;
+  if (emailFromActor(clean)) return true;
+  const lower = clean.toLowerCase();
+  return (registry.people || []).some((person) => String(person.name || "").toLowerCase() === lower && emailFromActor(person.email || ""));
+}
+
 function taskFolderFromPath(taskPath) {
   const clean = String(taskPath || "").replaceAll("\\", "/");
   if (clean.endsWith("/task.yaml")) return clean.split("/").slice(0, -1).join("/");
@@ -219,6 +234,9 @@ async function validateRepo(registry) {
   const issues = [];
   for (const section of ["projects", "milestones", "tasks", "docs", "people", "next_ids"]) {
     if (!(section in registry)) issues.push({ level: "error", code: "REGISTRY_SECTION", message: `${section} must exist`, path: "registry.yaml" });
+  }
+  for (const [index, person] of (registry.people || []).entries()) {
+    if (!emailFromActor(person.email || "")) issues.push({ level: "warn", code: "PEOPLE_EMAIL_MISSING", message: `people[${index}] ${person.name || "unnamed"} should include a staff email`, path: "registry.yaml" });
   }
   for (const [kind, section, prefix] of [["project", "projects", "PROJ"], ["milestone", "milestones", "MILESTONE"], ["task", "tasks", "TASK"], ["doc", "docs", "DOC"]]) {
     const rows = registry[section] || {};
@@ -257,6 +275,7 @@ async function validateRepo(registry) {
     if (!DOC_TYPES.has(doc.doc_type)) issues.push({ level: "warn", code: "DOC_TYPE", message: `${docId} has unusual doc_type ${doc.doc_type}`, path: doc.path || "" });
   }
   const reviews = await readJsonl("reviews/task-reviews.jsonl");
+  const events = await readJsonl("events/task-events.jsonl");
   for (const [taskId, ref] of Object.entries(registry.tasks || {})) {
     let task = {};
     try {
@@ -268,6 +287,10 @@ async function validateRepo(registry) {
     if (task.id !== taskId) issues.push({ level: "error", code: "TASK_ID_MISMATCH", message: `${taskId} file id is ${task.id}`, path: ref.path || "" });
     if (!registry.projects?.[task.project_id]) issues.push({ level: "error", code: "REL_TASK_PROJECT", message: `${taskId} references missing project ${task.project_id}`, path: ref.path || "" });
     if (!TASK_STATUSES.has(task.status)) issues.push({ level: "error", code: "TASK_STATUS", message: `${taskId} has invalid status ${task.status}`, path: ref.path || "" });
+    if (!task.assigned_to && !task.role) issues.push({ level: "warn", code: "TASK_ASSIGNEE_MISSING", message: `${taskId} has no assignee or role placeholder`, path: ref.path || "" });
+    if (!task.assigned_to && task.role && !["Backlog", "Iceboxed"].includes(task.status || "")) issues.push({ level: "warn", code: "TASK_ROLE_ONLY_ASSIGNEE", message: `${taskId} is active with only role placeholder ${task.role}; assign a staff email`, path: ref.path || "" });
+    if (task.assigned_to && !actorHasStaffEmail(registry, task.assigned_to)) issues.push({ level: "warn", code: "TASK_ASSIGNEE_STAFF_EMAIL", message: `${taskId} assignee should be a staff email or a person with email in registry.people`, path: ref.path || "" });
+    if (task.reviewer && !actorHasStaffEmail(registry, task.reviewer)) issues.push({ level: "warn", code: "TASK_REVIEWER_STAFF_EMAIL", message: `${taskId} reviewer should be a staff email or a person with email in registry.people`, path: ref.path || "" });
     if (task.status === "In Review" && !task.output) issues.push({ level: "error", code: "TASK_REVIEW_OUTPUT_MISSING", message: `${taskId} is In Review without output link`, path: ref.path || "" });
     if (["Done", "Verified"].includes(task.status) && !task.output) issues.push({ level: "error", code: "TASK_OUTPUT_MISSING", message: `${taskId} is ${task.status} without output link`, path: ref.path || "" });
     if (["Done", "Verified"].includes(task.status) && !approvedReviewExists(reviews, taskId)) issues.push({ level: "error", code: "TASK_APPROVED_REVIEW_MISSING", message: `${taskId} is ${task.status} without an approved review record`, path: ref.path || "" });
@@ -280,6 +303,12 @@ async function validateRepo(registry) {
     for (const dep of task.dependencies || []) {
       if (!registry.tasks?.[dep]) issues.push({ level: "error", code: "REL_TASK_DEPENDENCY", message: `${taskId} depends on missing ${dep}`, path: ref.path || "" });
     }
+  }
+  for (const event of events) {
+    if (event.actor && !actorHasStaffEmail(registry, event.actor)) issues.push({ level: "warn", code: "EVENT_ACTOR_STAFF_EMAIL", message: `${event.id || event.task_id || "event"} actor should be a staff email or a person with email in registry.people`, path: "events/task-events.jsonl" });
+  }
+  for (const review of reviews) {
+    if (review.reviewer && !actorHasStaffEmail(registry, review.reviewer)) issues.push({ level: "warn", code: "REVIEWER_STAFF_EMAIL", message: `${review.id || review.task_id || "review"} reviewer should be a staff email or a person with email in registry.people`, path: "reviews/task-reviews.jsonl" });
   }
   for (const rel of ["policies/output-requirements.yaml", "policies/definition-of-ready.yaml", "policies/definition-of-done.yaml", "policies/review-gates.yaml", "policies/role-permissions.yaml", "policies/storage-policy.yaml", "policies/wiki-guidelines.md", "policies/terminology.yaml", "policies/branch-protection.md", "policies/agent-operating-rules.md"]) {
     if (!(await exists(safeRepoPath(rel)))) issues.push({ level: "warn", code: "POLICY_MISSING", message: `${rel} is missing`, path: rel });

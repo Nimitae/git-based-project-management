@@ -267,6 +267,11 @@ th {
   text-transform: uppercase;
 }
 
+a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -311,6 +316,13 @@ th {
   background: #fff;
 }
 
+.task-card,
+.doc-row,
+.event {
+  display: grid;
+  gap: 8px;
+}
+
 .event strong,
 .doc-row strong,
 .task-card strong {
@@ -325,6 +337,76 @@ th {
 
 .task-board {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.item-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meta-pill {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--text);
+  background: #f8fafc;
+  overflow-wrap: anywhere;
+}
+
+.meta-pill span {
+  color: var(--muted);
+}
+
+.item-snippet,
+.task-card p,
+.doc-row p,
+.event p {
+  margin: 0;
+}
+
+.item-snippet {
+  color: var(--text);
+}
+
+.item-link {
+  overflow-wrap: anywhere;
+}
+
+.action-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.inline-action {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.selected-task-summary {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+}
+
+.selected-task-summary span {
+  color: var(--muted);
+}
+
+.update-picker {
+  margin-bottom: 14px;
 }
 
 .form-stack {

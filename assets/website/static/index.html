@@ -69,6 +69,7 @@
                       <th>Owner</th>
                       <th>Status</th>
                       <th>Expected Output</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="taskRows"></tbody>
@@ -96,7 +97,7 @@
           <section class="panel wide">
             <div class="panel-header">
               <h2>My Work</h2>
-              <input id="myWorkOwner" type="search" placeholder="Type an owner or reviewer name" />
+              <input id="myWorkOwner" type="search" list="staffOptions" placeholder="Type an owner, reviewer, or email" />
             </div>
             <h3>Assigned To Me</h3>
             <div id="myAssignedList" class="task-board"></div>
@@ -177,14 +178,22 @@
         </section>
 
         <section class="view" id="updatesView">
+          <section class="panel wide update-picker">
+            <div class="panel-header">
+              <h2>Selected Task</h2>
+              <input id="updateTaskPicker" list="taskOptions" placeholder="TASK3" />
+            </div>
+            <div id="selectedTaskSummary" class="selected-task-summary"></div>
+          </section>
+
           <div class="proposal-grid">
             <section class="panel">
               <div class="panel-header">
                 <h2>Update Task</h2>
               </div>
               <form id="updateTaskForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK2" required /></label>
-                <label>Actor <input name="actor" placeholder="Gina" /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK2" required /></label>
+                <label>Actor <input name="actor" list="staffOptions" placeholder="gina@example.com" /></label>
                 <label>Status
                   <select name="status">
                     <option value="">No status change</option>
@@ -214,7 +223,7 @@
                 <label>Blocker <input name="blocker" placeholder="Only required when blocked" /></label>
                 <label>Milestone <input name="milestone" placeholder="MILESTONE1" /></label>
                 <label>Feature Area <input name="feature_area" placeholder="FTUE, combat, backend, UI" /></label>
-                <label>Reviewer <input name="reviewer" placeholder="Maya" /></label>
+                <label>Reviewer <input name="reviewer" list="staffOptions" placeholder="maya@example.com" /></label>
                 <button type="submit">Propose Task Update</button>
               </form>
             </section>
@@ -224,8 +233,8 @@
                 <h2>Submit Output</h2>
               </div>
               <form id="submitOutputForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
-                <label>Actor <input name="actor" placeholder="Paul" required /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" list="staffOptions" placeholder="paul@example.com" required /></label>
                 <label>Output <input name="output" placeholder="https://github.com/org/repo/pull/42" required /></label>
                 <label>Target Repo <input name="target_repo" placeholder="game-client" /></label>
                 <label>Output Commit <input name="output_commit" placeholder="40-char commit SHA" /></label>
@@ -239,8 +248,8 @@
                 <h2>Review Task</h2>
               </div>
               <form id="reviewTaskForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
-                <label>Reviewer <input name="reviewer" placeholder="Maya" required /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK3" required /></label>
+                <label>Reviewer <input name="reviewer" list="staffOptions" placeholder="maya@example.com" required /></label>
                 <label>Decision
                   <select name="decision" required>
                     <option value="approved">Approved</option>
@@ -260,8 +269,8 @@
                 <h2>Record Attempt</h2>
               </div>
               <form id="recordAttemptForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
-                <label>Actor <input name="actor" placeholder="Paul" required /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" list="staffOptions" placeholder="paul@example.com" required /></label>
                 <label>Output <input name="output" placeholder="PR, MR, build, asset, capture, or doc link" required /></label>
                 <label>Target Repo <input name="target_repo" placeholder="game-client" /></label>
                 <label>Output Commit <input name="output_commit" placeholder="40-char commit SHA" /></label>
@@ -275,8 +284,8 @@
                 <h2>Verification Failed</h2>
               </div>
               <form id="verificationFailedForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
-                <label>Reviewer <input name="reviewer" placeholder="Maya" required /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK3" required /></label>
+                <label>Reviewer <input name="reviewer" list="staffOptions" placeholder="maya@example.com" required /></label>
                 <label>Output <input name="output" placeholder="Optional attempted output link" /></label>
                 <label>Reason <textarea name="reason" rows="4" placeholder="Objective check that failed" required></textarea></label>
                 <button type="submit">Record Failed Verification</button>
@@ -288,8 +297,8 @@
                 <h2>Withdraw Output</h2>
               </div>
               <form id="withdrawOutputForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
-                <label>Actor <input name="actor" placeholder="Paul" required /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" list="staffOptions" placeholder="paul@example.com" required /></label>
                 <label>Previous Output <input name="output" placeholder="Optional output being withdrawn" /></label>
                 <label>Reason <textarea name="reason" rows="4" placeholder="Why this output should no longer be reviewed" required></textarea></label>
                 <button type="submit">Withdraw Output</button>
@@ -301,8 +310,8 @@
                 <h2>Supersede Output</h2>
               </div>
               <form id="supersedeOutputForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
-                <label>Actor <input name="actor" placeholder="Paul" required /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" list="staffOptions" placeholder="paul@example.com" required /></label>
                 <label>Old Output <input name="old_output" placeholder="Optional previous output" /></label>
                 <label>New Output <input name="new_output" placeholder="Updated PR, MR, build, asset, capture, or doc link" required /></label>
                 <label>Reason <textarea name="reason" rows="4" placeholder="What changed since the previous output?" required></textarea></label>
@@ -315,8 +324,8 @@
                 <h2>Cancel Review</h2>
               </div>
               <form id="cancelReviewForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK3" required /></label>
-                <label>Actor <input name="actor" placeholder="Maya" required /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK3" required /></label>
+                <label>Actor <input name="actor" list="staffOptions" placeholder="maya@example.com" required /></label>
                 <label>Reason <textarea name="reason" rows="4" placeholder="Why review stopped before a decision" required></textarea></label>
                 <button type="submit">Cancel Review</button>
               </form>
@@ -327,8 +336,8 @@
                 <h2>Add Event</h2>
               </div>
               <form id="addEventForm" class="form-stack">
-                <label>Task ID <input name="task_id" placeholder="TASK4" required /></label>
-                <label>Actor <input name="actor" placeholder="Anika" required /></label>
+                <label>Task ID <input name="task_id" list="taskOptions" placeholder="TASK4" required /></label>
+                <label>Actor <input name="actor" list="staffOptions" placeholder="anika@example.com" required /></label>
                 <label>Event Type <input name="event_type" placeholder="blocked, handoff, note" /></label>
                 <label>Message <textarea name="message" rows="4" required></textarea></label>
                 <button type="submit">Add Event</button>
@@ -353,8 +362,8 @@
               <form id="createTaskForm" class="form-stack">
                 <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
                 <label>Title <input name="title" placeholder="Draft concept doc" required /></label>
-                <label>Assigned To <input name="assigned_to" placeholder="Samantha" required /></label>
-                <label>Role <input name="role" placeholder="PM" /></label>
+                <label>Assigned To <input name="assigned_to" list="staffOptions" placeholder="samantha@example.com" /></label>
+                <label>Role <input name="role" placeholder="Designer, PM, backend engineer before assignment" /></label>
                 <label>Expected Output <input name="expected_output" placeholder="Design Doc" required /></label>
                 <label>Target Repo <input name="target_repo" placeholder="game-client, game-backend, web-portal" /></label>
                 <button type="submit">Create PR/MR Proposal</button>
@@ -389,7 +398,7 @@
               <form id="createMilestoneForm" class="form-stack">
                 <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
                 <label>Title <input name="title" placeholder="FTUE vertical slice" required /></label>
-                <label>Owner <input name="owner" placeholder="Maya" required /></label>
+                <label>Owner <input name="owner" list="staffOptions" placeholder="maya@example.com" required /></label>
                 <label>Status
                   <select name="status">
                     <option>Planned</option>
@@ -410,7 +419,7 @@
               <form id="createDocForm" class="form-stack">
                 <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
                 <label>Title <input name="title" placeholder="HUD mockup review" required /></label>
-                <label>Owner <input name="owner" placeholder="Fern" required /></label>
+                <label>Owner <input name="owner" list="staffOptions" placeholder="fern@example.com" required /></label>
                 <label>Document Type
                   <select name="doc_type">
                     <option>proposal</option>
@@ -455,7 +464,7 @@
               <form id="featureProposalForm" class="form-stack">
                 <label>Project ID <input name="project_id" placeholder="PROJ1" required /></label>
                 <label>Title <input name="title" placeholder="FTUE data tracking" required /></label>
-                <label>Owner <input name="owner" placeholder="Maya" required /></label>
+                <label>Owner <input name="owner" list="staffOptions" placeholder="maya@example.com" required /></label>
                 <label>Problem <textarea name="problem" rows="3" placeholder="What problem should this solve?"></textarea></label>
                 <label>Player/User Value <textarea name="value" rows="3" placeholder="Why does this matter now?"></textarea></label>
                 <label>Proposed Scope <textarea name="scope" rows="3" placeholder="Included systems, screens, assets, services, docs"></textarea></label>
@@ -479,7 +488,7 @@
                 <label>Source URL <input name="source_url" placeholder="https://..." /></label>
                 <label>Repo Path <input name="path" placeholder="assets/previews/hud-v2.png" /></label>
                 <label>Used By <input name="used_by" placeholder="PROJ1,TASK3,DOC5" /></label>
-                <label>Owner <input name="owner" placeholder="Anika" required /></label>
+                <label>Owner <input name="owner" list="staffOptions" placeholder="anika@example.com" required /></label>
                 <button type="submit">Register Asset</button>
               </form>
             </section>
@@ -507,6 +516,8 @@
         </section>
       </main>
     </div>
+    <datalist id="taskOptions"></datalist>
+    <datalist id="staffOptions"></datalist>
     <script src="/static/app.js"></script>
   </body>
 </html>

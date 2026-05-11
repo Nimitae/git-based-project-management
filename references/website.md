@@ -22,9 +22,10 @@ The bundled static UI supports:
 - Review queue for work in review, failed verification, withdrawn outputs, cancelled reviews, and stale review items.
 - Search across docs/tasks/assets/owners/status.
 - Task table with status and expected output.
-- Documents panel with Git paths.
-- Document rows include file hashes so raw edit proposals can carry a base hash.
-- Assets panel with mockups, art, models, videos, builds, and external links.
+- Task cards with owners, role placeholders, repo links, current update text, outputs, and one-click update actions.
+- Documents panel with Git paths, owners, status, headings, snippets, and file hashes so raw edit proposals can carry a base hash.
+- Assets panel with mockups, art, models, videos, builds, owners, status, usage, and external links.
+- Updates view with a selected-task picker that pre-populates task IDs, actors, status, repo/output fields, reviewer fields, and current task context across update forms.
 - Create-task proposal form with optional target repo.
 - Register-repo proposal form for project implementation repos.
 - Feature-proposal form.
@@ -69,12 +70,14 @@ Proposal payload examples:
   "type": "create_task",
   "title": "Draft concept doc",
   "project_id": "PROJ1",
-  "assigned_to": "Samantha",
+  "assigned_to": "samantha@example.com",
   "role": "Design",
   "expected_output": "Concept Doc",
   "target_repo": "game-client"
 }
 ```
+
+For unassigned backlog planning, omit `assigned_to` and keep `role` as the placeholder until the manager assigns a real staff email.
 
 ```json
 {
@@ -127,7 +130,7 @@ If `base_sha256` is provided and the file has changed, the website rejects the p
 {
   "type": "update_task",
   "task_id": "TASK2",
-  "actor": "Gina",
+  "actor": "gina@example.com",
   "status": "In Progress",
   "user_update": "Testing two tuning directions."
 }

@@ -152,7 +152,8 @@ def read_text(path: Path, default: str = "") -> str:
 
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
 
 
 def read_json_subset(path: Path, default):
@@ -602,6 +603,7 @@ def ensure_base_registry(name: str, owner: str, provider: str, github_repo: str,
     project = make_project_record("PROJ1", name, owner, "game", "Active")
     task_path, task, task_ref = make_task("TASK1", "PROJ1", name, "Confirm collaboration setup", owner, "PM", "Setup Confirmation")
     doc_path, _doc_text, doc_ref = make_doc("DOC1", project, "proposal", "Kickoff Proposal", owner)
+    owner_email = email_from_actor(owner)
     return {
         "schema_version": 2,
         "name": name,
@@ -609,7 +611,7 @@ def ensure_base_registry(name: str, owner: str, provider: str, github_repo: str,
         "github": {"api_url": "https://api.github.com", "repo": github_repo, "default_branch": "main"},
         "gitlab": {"url": gitlab_url, "project_path": gitlab_project, "default_branch": "main"},
         "next_ids": {"project": 2, "task": 2, "doc": 2, "asset": 1, "event": 1, "review": 1, "milestone": 1},
-        "people": [{"name": owner, "role": "Owner", "email": ""}],
+        "people": [{"name": owner, "role": "Owner", "email": owner_email}],
         "projects": {"PROJ1": project},
         "milestones": {},
         "tasks": {"TASK1": task_ref},
@@ -837,8 +839,9 @@ def default_output_policy() -> dict:
 def default_definition_of_ready_policy() -> dict:
     return {
         "schema_version": 1,
-        "ready_task_requires": ["assigned_to", "expected_output", "acceptance_criteria"],
-        "ready_task_recommends": ["target_repo", "milestone", "reviewer"],
+        "ready_task_requires": ["expected_output", "acceptance_criteria"],
+        "ready_task_recommends": ["assigned_to", "role", "target_repo", "milestone", "reviewer"],
+        "active_task_requires": ["assigned_to_staff_email"],
         "ready_doc_requires": ["owner", "status", "required_sections"],
     }
 
@@ -1064,6 +1067,44 @@ def project_repo_matches(project: dict, target_repo: str) -> bool:
     return bool(target) and target in project_repo_keys(project)
 
 
+def email_from_actor(value: str) -> str:
+    clean = (value or "").strip()
+    match = re.search(r"<([^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)>", clean)
+    if match:
+        return match.group(1).lower()
+    return clean.lower() if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", clean) else ""
+
+
+def actor_has_staff_email(registry: dict, value: str) -> bool:
+    clean = (value or "").strip()
+    if not clean or clean.lower() in {"unknown", "system"}:
+        return True
+    if email_from_actor(clean):
+        return True
+    lower = clean.lower()
+    return any(person.get("name", "").lower() == lower and email_from_actor(person.get("email", "")) for person in registry.get("people", []) or [])
+
+
+def actor_identity_values(value: str, people: list[dict] | None = None) -> set[str]:
+    clean = (value or "").strip()
+    if not clean:
+        return set()
+    lower = clean.lower()
+    values = {lower}
+    email = email_from_actor(clean)
+    if email:
+        values.add(email)
+    for person in people or []:
+        person_name = str(person.get("name", "")).strip().lower()
+        person_email = email_from_actor(person.get("email", ""))
+        if lower in {person_name, person_email, f"{person_name} <{person_email}>"}:
+            if person_name:
+                values.add(person_name)
+            if person_email:
+                values.add(person_email)
+    return values
+
+
 def repo_state_unknown(tasks: list[dict], registry: dict) -> list[dict]:
     rows: list[dict] = []
     implementation_outputs = ["pull request", "merge request", "implementation pr", "implementation mr", "commit"]
@@ -1117,6 +1158,9 @@ def validate_repo(repo: Path) -> list[dict]:
     for section in ["projects", "milestones", "tasks", "docs", "people", "next_ids"]:
         if section not in registry:
             issues.append(issue("error", "REGISTRY_SECTION", f"{section} must exist", "registry.yaml"))
+    for index, person in enumerate(registry.get("people", []) or []):
+        if not email_from_actor(person.get("email", "")):
+            issues.append(issue("warn", "PEOPLE_EMAIL_MISSING", f"people[{index}] {person.get('name', 'unnamed')} should include a staff email", "registry.yaml"))
     for kind, section in [("project", "projects"), ("milestone", "milestones"), ("task", "tasks"), ("doc", "docs")]:
         prefix = ID_PREFIX[kind]
         records = registry.get(section, {})
@@ -1180,6 +1224,7 @@ def validate_repo(repo: Path) -> list[dict]:
                     if section not in present:
                         issues.append(issue("warn", "DOC_SECTION_MISSING", f"{doc_id} is missing section '{section}'", doc.get("path", "")))
     reviews = read_jsonl(repo / "reviews/task-reviews.jsonl")
+    events = read_jsonl(repo / "events/task-events.jsonl")
     for task_id, task_ref in registry.get("tasks", {}).items():
         path = task_ref.get("path", "")
         try:
@@ -1195,8 +1240,15 @@ def validate_repo(repo: Path) -> list[dict]:
             issues.append(issue("error", "TASK_STATUS", f"{task_id} has invalid status {task.get('status')}", path))
         if task.get("checkpoint", "") not in CHECKPOINTS:
             issues.append(issue("warn", "TASK_CHECKPOINT", f"{task_id} has unusual checkpoint {task.get('checkpoint')}", path))
-        if not task.get("assigned_to"):
-            issues.append(issue("warn", "TASK_ASSIGNEE_MISSING", f"{task_id} has no assignee", path))
+        assigned_to = task.get("assigned_to", "")
+        if not assigned_to and not task.get("role"):
+            issues.append(issue("warn", "TASK_ASSIGNEE_MISSING", f"{task_id} has no assignee or role placeholder", path))
+        if not assigned_to and task.get("role") and task.get("status") not in {"Backlog", "Iceboxed"}:
+            issues.append(issue("warn", "TASK_ROLE_ONLY_ASSIGNEE", f"{task_id} is active with only role placeholder {task.get('role')}; assign a staff email", path))
+        if assigned_to and not actor_has_staff_email(registry, assigned_to):
+            issues.append(issue("warn", "TASK_ASSIGNEE_STAFF_EMAIL", f"{task_id} assignee should be a staff email or a person with email in registry.people", path))
+        if task.get("reviewer") and not actor_has_staff_email(registry, task.get("reviewer", "")):
+            issues.append(issue("warn", "TASK_REVIEWER_STAFF_EMAIL", f"{task_id} reviewer should be a staff email or a person with email in registry.people", path))
         if task.get("status") not in {"Iceboxed", "Verified"} and not task.get("expected_output"):
             issues.append(issue("warn", "TASK_EXPECTED_OUTPUT_MISSING", f"{task_id} has no expected_output", path))
         if task.get("status") == "Blocked" and not task.get("blocker"):
@@ -1230,6 +1282,12 @@ def validate_repo(repo: Path) -> list[dict]:
         for dep in task.get("dependencies", []) or []:
             if dep not in registry.get("tasks", {}):
                 issues.append(issue("error", "REL_TASK_DEPENDENCY", f"{task_id} depends on missing {dep}", path))
+    for event in events:
+        if event.get("actor") and not actor_has_staff_email(registry, event.get("actor", "")):
+            issues.append(issue("warn", "EVENT_ACTOR_STAFF_EMAIL", f"{event.get('id') or event.get('task_id') or 'event'} actor should be a staff email or a person with email in registry.people", "events/task-events.jsonl"))
+    for review in reviews:
+        if review.get("reviewer") and not actor_has_staff_email(registry, review.get("reviewer", "")):
+            issues.append(issue("warn", "REVIEWER_STAFF_EMAIL", f"{review.get('id') or review.get('task_id') or 'review'} reviewer should be a staff email or a person with email in registry.people", "reviews/task-reviews.jsonl"))
     for asset_id, asset in registry.get("assets", {}).items():
         if not re.fullmatch(r"ASSET\d+", asset_id):
             issues.append(issue("error", "ASSET_ID_FORMAT", f"{asset_id} should match ASSET#", "registry.yaml"))
@@ -1392,13 +1450,13 @@ def open_tasks(tasks: list[dict]) -> list[dict]:
     return [task for task in tasks if task.get("status") not in HISTORICAL_TASK_STATUSES]
 
 
-def assigned_tasks(tasks: list[dict], user: str, include_done: bool = False) -> list[dict]:
-    needle = user.strip().lower()
+def assigned_tasks(tasks: list[dict], user: str, include_done: bool = False, people: list[dict] | None = None) -> list[dict]:
+    needle = actor_identity_values(user, people)
     rows = []
     for task in tasks:
-        assignee = str(task.get("assigned_to", "")).strip().lower()
-        reviewer = str(task.get("reviewer", "")).strip().lower()
-        if needle and needle not in {assignee, reviewer}:
+        assignee = actor_identity_values(task.get("assigned_to", ""), people)
+        reviewer = actor_identity_values(task.get("reviewer", ""), people)
+        if needle and not (needle & assignee or needle & reviewer):
             continue
         if not include_done and task.get("status") in HISTORICAL_TASK_STATUSES:
             continue
@@ -1556,7 +1614,7 @@ def print_task_lines(tasks: list[dict]) -> None:
 
 def cmd_my_tasks(args: argparse.Namespace) -> int:
     data = compile_data(repo_arg(args.repo))
-    rows = assigned_tasks(data["tasks"], args.user, args.include_done)
+    rows = assigned_tasks(data["tasks"], args.user, args.include_done, data.get("people", []))
     if args.json:
         print(json.dumps({"user": args.user, "tasks": rows}, indent=2))
     else:
@@ -2334,15 +2392,16 @@ def cmd_demo(args: argparse.Namespace) -> int:
         {"name": "game-backend", "provider": "github", "url": "https://github.com/example/game-backend", "default_branch": "main", "role": "backend"},
         {"name": "web-portal", "provider": "github", "url": "https://github.com/example/web-portal", "default_branch": "main", "role": "frontend"},
     ]
+    owner_email = email_from_actor(args.owner) or f"{slugify(args.owner).replace('-', '.')}@example.com"
     registry["people"] = [
-        {"name": args.owner, "role": "Project Manager", "email": ""},
-        {"name": "Gina", "role": "Game Designer", "email": ""},
-        {"name": "Paul", "role": "Programmer", "email": ""},
-        {"name": "Anika", "role": "Artist", "email": ""},
-        {"name": "Tara", "role": "3D Artist", "email": ""},
-        {"name": "Mo", "role": "Modeller", "email": ""},
-        {"name": "Bao", "role": "Backend Engineer", "email": ""},
-        {"name": "Fern", "role": "Frontend Engineer", "email": ""},
+        {"name": args.owner, "role": "Project Manager", "email": owner_email},
+        {"name": "Gina", "role": "Game Designer", "email": "gina@example.com"},
+        {"name": "Paul", "role": "Programmer", "email": "paul@example.com"},
+        {"name": "Anika", "role": "Artist", "email": "anika@example.com"},
+        {"name": "Tara", "role": "3D Artist", "email": "tara@example.com"},
+        {"name": "Mo", "role": "Modeller", "email": "mo@example.com"},
+        {"name": "Bao", "role": "Backend Engineer", "email": "bao@example.com"},
+        {"name": "Fern", "role": "Frontend Engineer", "email": "fern@example.com"},
     ]
     write_text(repo / project["path"], dump(project))
     write_text(
@@ -2654,7 +2713,7 @@ class GitPMHandler(BaseHTTPRequestHandler):
         if not path.startswith("/static/"):
             self.send_error(404)
             return
-        target = (STATIC_DIR / path.removeprefix("/static/")).resolve()
+        target = (STATIC_DIR / path[len("/static/") :]).resolve()
         try:
             target.relative_to(STATIC_DIR.resolve())
         except ValueError:
@@ -2877,7 +2936,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_repo(p)
     p.add_argument("--project-id", required=True)
     p.add_argument("--title", required=True)
-    p.add_argument("--assigned-to", required=True)
+    p.add_argument("--assigned-to", default="")
     p.add_argument("--role", default="")
     p.add_argument("--expected-output", required=True)
     p.add_argument("--target-repo", default="")

@@ -21,6 +21,12 @@ Allowed:
 - Edit project state, planning docs, repo links, task definitions, dependencies, asset manifests, and live notes through PRs/MRs.
 - Review validation and document-audit reports, then merge approved work if permitted.
 
+Assignment guidance:
+
+- Use staff emails for concrete assignees, reviewers, event actors, and output-attempt actors.
+- Leave `assigned_to` empty with a `role` placeholder only while a backlog task is not explicitly assigned.
+- Assign a real staff email before work moves into active execution or review.
+
 Recommended commands:
 
 ```powershell
@@ -28,7 +34,7 @@ git_pm.py create-project --repo . --name "Arena Prototype" --owner "Samantha" --
 git_pm.py create-milestone --repo . --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Samantha"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type game-design --title "Core Loop Design" --owner "Kai"
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type meeting-notes --title "Kickoff Notes" --owner "Samantha"
-git_pm.py create-task --repo . --project-id PROJ1 --title "Implement loop prototype" --assigned-to "Kenneth" --expected-output "Pull Request"
+git_pm.py create-task --repo . --project-id PROJ1 --title "Implement loop prototype" --assigned-to "kenneth@example.com" --role "Engineer" --expected-output "Pull Request"
 git_pm.py validate --repo .
 git_pm.py audit-docs --repo .
 ```

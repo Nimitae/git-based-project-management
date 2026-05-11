@@ -51,6 +51,8 @@ policies/
 
 Implementation code, game builds, websites, tools, and services can stay in their own GitHub or GitLab repositories. The management repo stores links, task intent, decisions, reviews, and project state. Each project should list its implementation repos in `project.yaml`; implementation tasks point to those repos with `target_repo` and record `output_commit` so reviewers can confirm the exact commit exists.
 
+Task actors should usually be real staff identified by email. Keep staff in `registry.yaml` under `people`; use a role-only task placeholder only while work is still unassigned.
+
 ## Quick Start
 
 Run the controller with Python:
