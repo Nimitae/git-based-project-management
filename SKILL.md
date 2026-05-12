@@ -15,7 +15,7 @@ Treat Git as the operating system:
 - Website: human interface that reads Git-derived data and turns edits into PRs/MRs instead of mutating canonical state directly.
 - Agents: use deterministic scripts first; use LLM judgment only to draft, summarize, review quality, or propose changes.
 
-**Always pull latest Git state before reading files or making edits.** Every `git_pm.py` command automatically runs `git pull --ff-only` before touching files. Use `--no-pull` only when working offline or when you have already pulled in the same session. If the pull fails (no remote, diverged branch), the command prints a warning and continues so you can still work locally.
+**Always pull latest Git state before reading files or making edits, and pull regularly during longer sessions.** Project Hub state is shared team knowledge and may change while you are working. Pull before making decisions, before creating or reviewing PRs/MRs, before writing files, before running planning/status summaries, and again after any pause or significant elapsed time. Every `git_pm.py` command automatically runs `git pull --ff-only` before touching files. Use `--no-pull` only when working offline or when you have already pulled in the same session and know no newer commits are needed. If the pull fails (no remote, diverged branch), the command prints a warning and continues so you can still work locally.
 
 **Check for conflicts before every write operation.** All write commands (`create-task`, `update-task`, `submit-output`, `review-task`, etc.) run a conflict scan before applying changes. If hard errors are found (missing project, missing task), the command always aborts. If only warnings are found (duplicate title, status regression, uncommitted working-tree changes), the command prints them and requires explicit confirmation:
 
@@ -160,7 +160,7 @@ Never commit tokens. Prefer environment variables:
 
 Use Git-local files for project intent:
 
-1. Pull latest Git state.
+1. Pull latest Git state at the start, then pull again regularly during the session so decisions use the latest project information.
 2. Read `START_HERE_FOR_AGENTS.md`, project README, roadmap, milestone, task folder, and Markdown docs from the local repo.
 3. Review any user-proposed additions or edits for consistency with existing repo facts before writing them.
 4. Use the website/API or controller to propose changes as PRs/MRs.
@@ -168,6 +168,23 @@ Use Git-local files for project intent:
 6. Run `validate`, `audit-docs`, and `compile` before merging.
 
 Keep Project Hub repos synchronized after every file change. If an agent or website workflow modifies tracked Project Hub files such as `registry.yaml`, project/task YAML, docs, assets, policies, events, reviews, or templates, it must create a Git commit and push it to the configured remote before reporting the work complete. Do not leave successful Project Hub edits only in the local worktree. For durable changes that require review, push the proposal branch and provide the PR/MR instead of committing directly to the protected default branch. When in doubt, every durable Project Hub file change should land through a PR/MR so the project owner, team lead, or accountable owner for the affected function/domain can review the diff before merge. If commit or push is blocked by credentials, network, branch protection, or validation errors, stop and report the exact branch, files changed, validation state, and next command needed to finish synchronization.
+
+## Project Hub PR/MR Reviewer Checklist
+
+When reviewing a Project Hub PR/MR, review the content diff directly; passing validation is necessary but not sufficient. The reviewer should request changes before merge when the proposed state would make the repo less clean, complete, or trustworthy.
+
+Check for:
+
+- Fact conflicts: new claims must agree with `registry.yaml`, project/task YAML, current docs, decisions, reviews, events, and registered assets.
+- Timeline conflicts: dates, sprint names, release windows, milestones, dependencies, needed-by fields, and status transitions must be internally consistent and not contradict historical records.
+- Vagueness: reject unclear scope, undefined success criteria, unexplained placeholders, "TBD" in active work, ambiguous owners, or language that cannot guide execution or review.
+- Missing information: durable records should include accountable owner, real staff email when work is assigned, project/task IDs, status, acceptance criteria, expected output, target repo when applicable, reviewer, links/assets, and decision context.
+- Structural correctness: IDs, dependencies, YAML/frontmatter, doc paths, asset references, event/review records, and task-folder files must match the schema and repository conventions.
+- Verifiability: completed or review-bound work must include accessible outputs, output commits for code, objective evidence, and approved review records where required.
+- Documentation hygiene: docs should be readable, current, non-duplicative, clearly marked as live or historical, and free of stale assumptions, broken links, leaked secrets, or unsupported assertions.
+- Review routing: domain-changing edits should be visible to the project owner, team lead, or accountable function owner before merge.
+
+If the PR/MR is directionally useful but incomplete, leave review comments that name the exact missing facts or contradictions and ask for a follow-up update before merge. Do not merge vague or conflicting project state just to fix it later.
 
 Use PRs/MRs for durable changes:
 
@@ -232,7 +249,7 @@ Treat live docs and historical records differently. Update live docs when termin
 
 ## Safety Rules
 
-- Always pull latest Git state before reading or modifying project files (`git pull --ff-only`). Use `--no-pull` only when explicitly working offline or when you have already pulled in the same session.
+- Always pull latest Git state before reading or modifying project files (`git pull --ff-only`) and repeat pulls regularly during longer work or review sessions. Use `--no-pull` only when explicitly working offline or when you have already pulled in the same session and have a concrete reason not to refresh.
 - Always check for conflicts before applying any write operation. Hard errors (missing project, missing task) block the command unconditionally. Warnings (duplicate titles, status regression, uncommitted changes) block the command until the requestor re-runs with `--confirm` or `--reason`. Document the reason when overriding a warning.
 - Always review user-proposed content before adding it to canonical Project Hub files. Flag and stop on contradictions, bad assumptions, broken references, missing accountable owners, unverifiable claims, duplicate work, unsafe links/assets, or secrets instead of normalizing them into the repo for someone to clean up later.
 - Do not trust hand-copied IDs. Allocate IDs through the controller or website backend and validate every PR/MR.
