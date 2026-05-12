@@ -61,6 +61,12 @@ def main() -> int:
         run(["init", "--repo", str(repo), "--name", "Demo Project Hub", "--owner", "Terence"])
         if not (repo / "START_HERE_FOR_AGENTS.md").exists():
             raise RuntimeError("START_HERE_FOR_AGENTS.md was not created")
+        embedded_skill = repo / ".project-hub" / "skill" / "SKILL.md"
+        embedded_skill_readme = repo / ".project-hub" / "skill" / "README.md"
+        if not embedded_skill.exists() or "Git-Based Project Management" not in embedded_skill.read_text(encoding="utf-8"):
+            raise RuntimeError("embedded skill instructions were not created")
+        if not embedded_skill_readme.exists() or "https://github.com/Nimitae/git-based-project-management" not in embedded_skill_readme.read_text(encoding="utf-8"):
+            raise RuntimeError("embedded skill README did not reference the source repo")
         run(["register-repo", "--repo", str(repo), "--project-id", "PROJ1", "--name", "game-client", "--provider", "github", "--url", "https://github.com/example/game-client", "--default-branch", "main", "--role", "client/gameplay"])
         run(["update-task", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--status", "In Progress", "--user-update", "Smoke test update"])
         run(["submit-output", "--repo", str(repo), "--task-id", "TASK1", "--actor", "Terence", "--output", "https://example.com/output", "--message", "Smoke output"])
