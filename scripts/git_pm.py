@@ -23,6 +23,7 @@ from urllib import error, parse, request
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = SKILL_ROOT / "assets" / "website" / "static"
+SKILL_SOURCE_REPO = "https://github.com/Nimitae/git-based-project-management"
 TASK_STATUSES = {"Backlog", "In Progress", "Blocked", "In Review", "Done", "Verified", "Iceboxed"}
 CHECKPOINTS = {"", "Drafting", "Ready", "Review", "Revising", "Blocked", "Accepted"}
 PROJECT_STATUSES = {"Planning", "Active", "Paused", "Shipped", "Archived"}
@@ -855,17 +856,23 @@ Add implementation repositories in `project.yaml` so collaborators and agents kn
 
 
 def start_here_for_agents_doc() -> str:
-    return """# Start Here For Agents
+    return f"""# Start Here For Agents
 
 This repository is the source of truth for project intent, task state, documents, reviews, attempts, decisions, and links to implementation repos.
+
+## Embedded Skill Instructions
+
+- Read `.project-hub/skill/SKILL.md` for the full Git-Based Project Management operating instructions when this hub is viewed in isolation.
+- The original skill source is `{SKILL_SOURCE_REPO}`. Use it to compare and update the embedded skill instructions through a normal Project Hub PR/MR.
 
 ## Before Any Work
 
 1. Pull latest Git state.
-2. Run or inspect `git_pm.py project-status --repo .`.
-3. Read `registry.yaml`, project `README.md`, roadmap, active milestones, relevant task folders, events, reviews, and linked live docs.
-4. Inspect implementation repos only after the management repo identifies the relevant repo or task.
-5. Propose durable changes through PRs/MRs or website proposals.
+2. Read `.project-hub/skill/SKILL.md` if you do not already have the skill installed locally.
+3. Run or inspect `git_pm.py project-status --repo .`.
+4. Read `registry.yaml`, project `README.md`, roadmap, active milestones, relevant task folders, events, reviews, and linked live docs.
+5. Inspect implementation repos only after the management repo identifies the relevant repo or task.
+6. Propose durable changes through PRs/MRs or website proposals.
 
 ## Common User Requests
 
@@ -903,6 +910,27 @@ If a reviewer asks what needs review:
 """
 
 
+def embed_skill_instructions(repo: Path) -> None:
+    """Embed a copy of the active skill instructions into an initialized Project Hub."""
+    skill_dir = repo / ".project-hub" / "skill"
+    skill_text = read_text(SKILL_ROOT / "SKILL.md")
+    if skill_text:
+        write_text(skill_dir / "SKILL.md", skill_text)
+    write_text(
+        skill_dir / "README.md",
+        f"""# Embedded Git-Based Project Management Skill
+
+This Project Hub embeds the active skill instructions so agents can operate the hub even when they view this repository in isolation.
+
+- Embedded instructions: `SKILL.md`
+- Original skill source: {SKILL_SOURCE_REPO}
+- Update rule: refresh this embedded copy from the original source through a normal Project Hub PR/MR when the skill changes.
+
+Do not treat this embedded copy as a separate fork of the skill. It is a local operating reference for this hub.
+""",
+    )
+
+
 def write_initial_files(repo: Path, registry: dict) -> None:
     seed = registry.pop("_seed")
     project = registry["projects"]["PROJ1"]
@@ -924,6 +952,7 @@ Use it to track project state, tasks, proposals, design docs, playtest reports, 
 - `templates/`: document and task templates.
 - `events/task-events.jsonl`: append-only collaboration updates.
 - `reviews/task-reviews.jsonl`: append-only output reviews.
+- `.project-hub/skill/`: embedded skill instructions and original source link for isolated agent operation.
 - `policies/wiki-guidelines.md`: required wiki shapes and task/asset linking rules.
 - `policies/review-gates.yaml`: rules for Done/Verified task states.
 
@@ -964,6 +993,7 @@ Task state, events, reviews, and output attempts live in Git files. This workflo
     write_text(repo / "policies/wiki-guidelines.md", wiki_guidelines_doc())
     write_text(repo / "policies/terminology.yaml", dump(default_terminology_policy()))
     (repo / ".project-hub/site-data").mkdir(parents=True, exist_ok=True)
+    embed_skill_instructions(repo)
     setup_website(repo, registry)
 
 
