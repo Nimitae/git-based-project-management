@@ -29,6 +29,8 @@ git_pm.py update-task ... --reason "Reverting to Backlog after scope cut"
 
 Note: commands that already require `--reason` (record-verification-failed, withdraw-output, supersede-output, cancel-review) treat the provided reason as automatic confirmation for warnings.
 
+**Use Project Hub scripts as far as possible.** Prefer `scripts/git_pm.py` commands, generated launch scripts, smoke tests, and deterministic project-specific scripts over hand-editing Project Hub files. This applies to initialization, validation, compile/audit, project health checks, task creation/updates, documents, milestones, repo registration, asset registration, events, attempts, reviews, withdrawals, supersessions, cancellation, and website startup. Treat direct YAML/Markdown edits as a fallback for one-off prose or a documented script gap; after any direct edit, run the relevant controller validation/audit/compile commands before committing. If a workflow becomes repeated or structurally important, add or extend a deterministic script or website function instead of continuing manual edits.
+
 Keep implementation codebases in their own GitHub/GitLab repos. This management repo stores links, intent, tasks, reviews, and source-of-truth project metadata.
 
 It is acceptable and encouraged to add deterministic scripts, importers, compiled data, or website views when a project develops special navigation or reporting needs that the generic Project Hub does not cover. Examples include scripts that ingest user stories, trace requirements into tasks, or add website pages for project-specific catalogs. Keep these extensions reviewable, documented, validated, committed, and pushed with the rest of the Project Hub.
@@ -85,7 +87,7 @@ When a reviewer asks what needs review, start with `review-queue`, then inspect 
 
 ## Core Commands
 
-Use `scripts/git_pm.py` for deterministic work:
+Use `scripts/git_pm.py` for deterministic work before editing canonical Project Hub files directly:
 
 ```powershell
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" doctor --interactive
@@ -187,7 +189,7 @@ git_pm.py create-doc --repo . --project-id PROJ1 --doc-type risk-log --title "Re
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type decision --title "Rename Heroes To Champions" --owner "Maya"
 ```
 
-Use controller commands for normal day-to-day updates:
+Use controller commands for normal day-to-day updates instead of hand-editing task/event/review YAML or Markdown:
 
 ```powershell
 git_pm.py register-repo --repo . --project-id PROJ1 --name game-client --provider github --url "https://github.com/org/game-client" --default-branch main --role "client/gameplay"
