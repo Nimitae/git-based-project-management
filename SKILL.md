@@ -29,6 +29,8 @@ git_pm.py update-task ... --reason "Reverting to Backlog after scope cut"
 
 Note: commands that already require `--reason` (record-verification-failed, withdraw-output, supersede-output, cancel-review) treat the provided reason as automatic confirmation for warnings.
 
+**Use Project Hub scripts as far as possible.** Prefer `scripts/git_pm.py` commands, generated launch scripts, smoke tests, and deterministic project-specific scripts over hand-editing Project Hub files. This applies to initialization, validation, compile/audit, project health checks, task creation/updates, documents, milestones, repo registration, asset registration, events, attempts, reviews, withdrawals, supersessions, cancellation, and website startup. Treat direct YAML/Markdown edits as a fallback for one-off prose or a documented script gap; after any direct edit, run the relevant controller validation/audit/compile commands before committing. If a workflow becomes repeated or structurally important, add or extend a deterministic script or website function instead of continuing manual edits.
+
 **Review proposed content before writing it.** Before adding or modifying Project Hub records, docs, tasks, assets, policies, templates, or reviews from user-provided content, inspect the proposed content itself and compare it against existing repo state. Flag inconsistencies, contradictions, stale assumptions, missing owners or staff emails, ambiguous scope, duplicate records, invalid IDs/dependencies, unverifiable outputs, broken links/assets, leaked secrets, unrealistic status claims, and anything else likely to contaminate canonical project state. Do not silently encode questionable information as source of truth; either resolve it with the user, keep it out of the repo, or put it in a PR/MR with explicit notes for the project owner, team lead, or accountable function owner to review.
 
 Keep implementation codebases in their own GitHub/GitLab repos. This management repo stores links, intent, tasks, reviews, and source-of-truth project metadata.
@@ -87,7 +89,7 @@ When a reviewer asks what needs review, start with `review-queue`, then inspect 
 
 ## Core Commands
 
-Use `scripts/git_pm.py` for deterministic work:
+Use `scripts/git_pm.py` for deterministic work before editing canonical Project Hub files directly:
 
 ```powershell
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" doctor --interactive
@@ -191,7 +193,7 @@ git_pm.py create-doc --repo . --project-id PROJ1 --doc-type risk-log --title "Re
 git_pm.py create-doc --repo . --project-id PROJ1 --doc-type decision --title "Rename Heroes To Champions" --owner "Maya"
 ```
 
-Use controller commands for normal day-to-day updates:
+Use controller commands for normal day-to-day updates instead of hand-editing task/event/review YAML or Markdown:
 
 ```powershell
 git_pm.py register-repo --repo . --project-id PROJ1 --name game-client --provider github --url "https://github.com/org/game-client" --default-branch main --role "client/gameplay"
