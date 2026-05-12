@@ -169,6 +169,23 @@ Use Git-local files for project intent:
 
 Keep Project Hub repos synchronized after every file change. If an agent or website workflow modifies tracked Project Hub files such as `registry.yaml`, project/task YAML, docs, assets, policies, events, reviews, or templates, it must create a Git commit and push it to the configured remote before reporting the work complete. Do not leave successful Project Hub edits only in the local worktree. For durable changes that require review, push the proposal branch and provide the PR/MR instead of committing directly to the protected default branch. When in doubt, every durable Project Hub file change should land through a PR/MR so the project owner, team lead, or accountable owner for the affected function/domain can review the diff before merge. If commit or push is blocked by credentials, network, branch protection, or validation errors, stop and report the exact branch, files changed, validation state, and next command needed to finish synchronization.
 
+## Project Hub PR/MR Reviewer Checklist
+
+When reviewing a Project Hub PR/MR, review the content diff directly; passing validation is necessary but not sufficient. The reviewer should request changes before merge when the proposed state would make the repo less clean, complete, or trustworthy.
+
+Check for:
+
+- Fact conflicts: new claims must agree with `registry.yaml`, project/task YAML, current docs, decisions, reviews, events, and registered assets.
+- Timeline conflicts: dates, sprint names, release windows, milestones, dependencies, needed-by fields, and status transitions must be internally consistent and not contradict historical records.
+- Vagueness: reject unclear scope, undefined success criteria, unexplained placeholders, "TBD" in active work, ambiguous owners, or language that cannot guide execution or review.
+- Missing information: durable records should include accountable owner, real staff email when work is assigned, project/task IDs, status, acceptance criteria, expected output, target repo when applicable, reviewer, links/assets, and decision context.
+- Structural correctness: IDs, dependencies, YAML/frontmatter, doc paths, asset references, event/review records, and task-folder files must match the schema and repository conventions.
+- Verifiability: completed or review-bound work must include accessible outputs, output commits for code, objective evidence, and approved review records where required.
+- Documentation hygiene: docs should be readable, current, non-duplicative, clearly marked as live or historical, and free of stale assumptions, broken links, leaked secrets, or unsupported assertions.
+- Review routing: domain-changing edits should be visible to the project owner, team lead, or accountable function owner before merge.
+
+If the PR/MR is directionally useful but incomplete, leave review comments that name the exact missing facts or contradictions and ask for a follow-up update before merge. Do not merge vague or conflicting project state just to fix it later.
+
 Use PRs/MRs for durable changes:
 
 - Project objective, scope, acceptance criteria, or decision changes.
