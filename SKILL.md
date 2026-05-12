@@ -104,13 +104,14 @@ Use `scripts/git_pm.py` for deterministic work:
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
 ```
 
-Use the Node.js website runtime for the deployable human UI:
+Use the copied Project Hub website runtime for the deployable human UI. Project Hub initialization copies the bundled web template into the initialized hub under `website/`, writes local launcher scripts, and initializes the launch environment from that hub's registry/provider settings:
 
 ```powershell
-cd "...\git-based-project-management\assets\website"
-$env:GPM_REPO = "C:\path\to\project-hub"
-npm start
+cd "C:\path\to\project-hub"
+.\start-website.ps1
 ```
+
+The copied runtime should read from the initialized hub itself (`GPM_REPO` points at the hub root and `GPM_STATIC_DIR` points at `website/static`). The generated launch scripts prefill `GPM_PROVIDER`, `GPM_GITHUB_REPO`, `GPM_GITLAB_URL`, and `GPM_GITLAB_PROJECT` from the initialization inputs; users only add local tokens and opt into live PR/MR creation when ready. Use the source `assets/website` runtime only when developing the skill's website template itself.
 
 Use Docker for container deployment:
 
@@ -135,9 +136,9 @@ Use the bundled smoke tests before handing a setup to another agent:
    - Token with repo/API write permission if the website or agent must create PRs/MRs.
    - Local Project Hub repo path.
    - User role and permission intent.
-2. Run `init` for a new management repo, or clone an existing repo.
-3. Run `validate`.
-4. Run `website` locally for review, then deploy the Node.js website runtime with Docker or the team's preferred runner.
+2. Run `init` for a new management repo, or clone an existing repo. Initialization must copy the bundled Node.js website template into the Project Hub as `website/server.mjs` and `website/static/`, generate `start-website.ps1` and `start-website.sh`, and preconfigure those launchers from the hub's provider/repository settings.
+3. Confirm the init self-test passed. Initialization runs validation and compile after seeding files and website assets; resolve any reported errors before committing or deploying.
+4. Run the copied website from the Project Hub root for review, then deploy that initialized website runtime with Docker or the team's preferred runner.
 5. Commit the Project Hub repo and push it to GitHub/GitLab.
 
 Never commit tokens. Prefer environment variables:
