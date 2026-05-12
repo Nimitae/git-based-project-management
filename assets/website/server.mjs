@@ -10,9 +10,12 @@ const STATIC_DIR = path.resolve(process.env.GPM_STATIC_DIR || path.join(__dirnam
 const REPO = path.resolve(process.env.GPM_REPO || process.cwd());
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8787);
-const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "In Review", "Done", "Verified", "Iceboxed"]);
+const TASK_STATUSES = new Set(["Backlog", "In Progress", "Blocked", "In Review", "Done", "Verified", "Iceboxed", "Cancelled"]);
 const PROJECT_STATUSES = new Set(["Planning", "Active", "Paused", "Shipped", "Archived"]);
 const MILESTONE_STATUSES = new Set(["Planned", "Active", "At Risk", "Done", "Archived"]);
+const TASK_RELEASE_TARGETS = new Set(["MVP", "Beta", "GA", "Post-GA"]);
+const TASK_PRIORITIES = new Set(["P1", "P2", "P3", "P4", "P5", "Unprioritized"]);
+const TASK_CHECKPOINTS = new Set(["Drafting", "Review", "Revising", "Ready"]);
 const ATTEMPT_EVENT_TYPES = new Set(["submitted_output", "output_attempted", "verification_failed", "output_withdrawn", "output_superseded", "review_cancelled"]);
 const DOC_TYPES = new Set(["proposal", "brief", "feature-proposal", "feature-brief", "game-design", "technical-spec", "frontend-spec", "backend-spec", "telemetry-spec", "api-contract", "playtest-plan", "playtest-session", "playtest-report", "qa-report", "qa-bug-report", "research-report", "asset-brief", "3d-asset-brief", "art-handoff", "3d-model-handoff", "video-brief", "mockup-review", "build-note", "release-plan", "postmortem", "decision", "meeting-notes", "project-note", "weekly-update", "risk-log", "retro-notes"]);
 const HISTORICAL_TASK_STATUSES = new Set(["Done", "Verified", "Iceboxed"]);
@@ -319,6 +322,9 @@ async function validateRepo(registry) {
     if (task.id !== taskId) issues.push({ level: "error", code: "TASK_ID_MISMATCH", message: `${taskId} file id is ${task.id}`, path: ref.path || "" });
     if (!registry.projects?.[task.project_id]) issues.push({ level: "error", code: "REL_TASK_PROJECT", message: `${taskId} references missing project ${task.project_id}`, path: ref.path || "" });
     if (!TASK_STATUSES.has(task.status)) issues.push({ level: "error", code: "TASK_STATUS", message: `${taskId} has invalid status ${task.status}`, path: ref.path || "" });
+    if (task.priority && !TASK_PRIORITIES.has(task.priority)) issues.push({ level: "warn", code: "TASK_PRIORITY", message: `${taskId} has unrecognised priority "${task.priority}"; expected P1–P5 or Unprioritized`, path: ref.path || "" });
+    if (task.checkpoint && !TASK_CHECKPOINTS.has(task.checkpoint)) issues.push({ level: "warn", code: "TASK_CHECKPOINT", message: `${taskId} has unrecognised checkpoint "${task.checkpoint}"; expected Drafting, Review, Revising, or Ready`, path: ref.path || "" });
+    if (task.release_target && !TASK_RELEASE_TARGETS.has(task.release_target)) issues.push({ level: "warn", code: "TASK_RELEASE_TARGET", message: `${taskId} has unrecognised release_target "${task.release_target}"; expected MVP, Beta, GA, or Post-GA`, path: ref.path || "" });
     if (!task.assigned_to && !task.role) issues.push({ level: "warn", code: "TASK_ASSIGNEE_MISSING", message: `${taskId} has no assignee or role placeholder`, path: ref.path || "" });
     if (!task.assigned_to && task.role && !["Backlog", "Iceboxed"].includes(task.status || "")) issues.push({ level: "warn", code: "TASK_ROLE_ONLY_ASSIGNEE", message: `${taskId} is active with only role placeholder ${task.role}; assign a staff email`, path: ref.path || "" });
     if (task.assigned_to && !actorHasStaffEmail(registry, task.assigned_to)) issues.push({ level: "warn", code: "TASK_ASSIGNEE_STAFF_EMAIL", message: `${taskId} assignee should be a staff email or a person with email in registry.people`, path: ref.path || "" });
@@ -984,9 +990,13 @@ async function githubProposal(registry, title, message, actions) {
 async function gitlabProposal(registry, title, message, actions) {
   const projectPath = process.env.GPM_GITLAB_PROJECT || registry.gitlab?.project_path || "";
   if (!projectPath) throw new Error("GitLab MR mode requires GPM_GITLAB_PROJECT");
-  const target = process.env.GPM_TARGET_BRANCH || registry.gitlab?.default_branch || "main";
-  const source = `project-hub/${slugify(title).slice(0, 48)}-${Date.now()}`;
   const encoded = encodeURIComponent(projectPath);
+  let target = process.env.GPM_TARGET_BRANCH || registry.gitlab?.default_branch || "";
+  if (!target) {
+    const projectInfo = await providerApi("gitlab", "GET", `/api/v4/projects/${encoded}`);
+    target = projectInfo.default_branch || "main";
+  }
+  const source = `project-hub/${slugify(title).slice(0, 48)}-${Date.now()}`;
   await providerApi("gitlab", "POST", `/api/v4/projects/${encoded}/repository/commits`, { branch: source, start_branch: target, commit_message: message, actions });
   const mr = await providerApi("gitlab", "POST", `/api/v4/projects/${encoded}/merge_requests`, { source_branch: source, target_branch: target, title, description: "Created by Git-Based Project Management website.", remove_source_branch: true });
   return { mode: "gitlab", branch: source, merge_request: mr.web_url || "" };

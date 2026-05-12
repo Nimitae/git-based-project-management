@@ -621,24 +621,77 @@ async function loadData() {
   render();
 }
 
-async function submitProposal(payload) {
-  const response = await fetch("/api/proposals", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const result = await response.json();
-  $("proposalResult").textContent = JSON.stringify(result, null, 2);
+function showToast(message, type) {
+  let toast = document.getElementById("gpm-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "gpm-toast";
+    Object.assign(toast.style, {
+      position: "fixed", bottom: "24px", right: "24px", zIndex: "9999",
+      padding: "14px 20px", borderRadius: "8px", fontSize: "14px",
+      fontWeight: "600", boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+      maxWidth: "520px", wordBreak: "break-word",
+      transition: "opacity 0.4s", opacity: "0", pointerEvents: "none"
+    });
+    document.body.appendChild(toast);
+  }
+  toast.style.background = type === "success" ? "#16a34a" : "#dc2626";
+  toast.style.color = "#fff";
+  toast.textContent = message;
+  toast.style.opacity = "1";
+  toast.style.pointerEvents = "auto";
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.style.opacity = "0"; toast.style.pointerEvents = "none"; }, 6000);
 }
 
-async function submitUpdate(payload) {
-  const response = await fetch("/api/proposals", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const result = await response.json();
-  $("updateResult").textContent = JSON.stringify(result, null, 2);
+async function submitProposal(payload, formEl) {
+  const btn = formEl && formEl.querySelector("button[type='submit']");
+  const origText = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = "Submitting…"; }
+  try {
+    const response = await fetch("/api/proposals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    $("proposalResult").textContent = JSON.stringify(result, null, 2);
+    if (result.error) {
+      showToast("Error: " + result.error, "error");
+    } else {
+      const mrUrl = result.merge_request || result.pull_request || "";
+      showToast(mrUrl ? "✓ MR created — " + mrUrl : "✓ Proposal submitted (dry-run)", "success");
+    }
+  } catch (err) {
+    showToast("Network error: " + (err.message || "unknown"), "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
+}
+
+async function submitUpdate(payload, formEl) {
+  const btn = formEl && formEl.querySelector("button[type='submit']");
+  const origText = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = "Submitting…"; }
+  try {
+    const response = await fetch("/api/proposals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    $("updateResult").textContent = JSON.stringify(result, null, 2);
+    if (result.error) {
+      showToast("Error: " + result.error, "error");
+    } else {
+      const mrUrl = result.merge_request || result.pull_request || "";
+      showToast(mrUrl ? "✓ MR created — " + mrUrl : "✓ Update submitted (dry-run)", "success");
+    }
+  } catch (err) {
+    showToast("Network error: " + (err.message || "unknown"), "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
 }
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => navTo(button.dataset.view)));
@@ -686,7 +739,7 @@ $("createTaskForm").addEventListener("submit", (event) => {
     role: form.get("role"),
     expected_output: form.get("expected_output"),
     target_repo: form.get("target_repo")
-  });
+  }, event.target);
 });
 
 $("registerRepoForm").addEventListener("submit", (event) => {
@@ -700,7 +753,7 @@ $("registerRepoForm").addEventListener("submit", (event) => {
     url: form.get("url"),
     default_branch: form.get("default_branch"),
     role: form.get("role")
-  });
+  }, event.target);
 });
 
 $("createDocForm").addEventListener("submit", (event) => {
@@ -712,7 +765,7 @@ $("createDocForm").addEventListener("submit", (event) => {
     title: form.get("title"),
     owner: form.get("owner"),
     doc_type: form.get("doc_type")
-  });
+  }, event.target);
 });
 
 $("featureProposalForm").addEventListener("submit", (event) => {
@@ -730,7 +783,7 @@ $("featureProposalForm").addEventListener("submit", (event) => {
     risks: form.get("risks"),
     task_breakdown: form.get("task_breakdown"),
     decision_needed: form.get("decision_needed")
-  });
+  }, event.target);
 });
 
 $("createMilestoneForm").addEventListener("submit", (event) => {
@@ -742,7 +795,7 @@ $("createMilestoneForm").addEventListener("submit", (event) => {
     title: form.get("title"),
     owner: form.get("owner"),
     status: form.get("status")
-  });
+  }, event.target);
 });
 
 $("registerAssetForm").addEventListener("submit", (event) => {
@@ -758,7 +811,7 @@ $("registerAssetForm").addEventListener("submit", (event) => {
     source_url: form.get("source_url"),
     used_by: form.get("used_by"),
     owner: form.get("owner")
-  });
+  }, event.target);
 });
 
 $("editFileForm").addEventListener("submit", (event) => {
@@ -770,7 +823,7 @@ $("editFileForm").addEventListener("submit", (event) => {
     content: form.get("content"),
     message: form.get("message"),
     base_sha256: form.get("base_sha256")
-  });
+  }, event.target);
 });
 
 $("updateTaskForm").addEventListener("submit", (event) => {
@@ -790,7 +843,7 @@ $("updateTaskForm").addEventListener("submit", (event) => {
     feature_area: form.get("feature_area"),
     reviewer: form.get("reviewer"),
     user_update: form.get("user_update")
-  });
+  }, event.target);
 });
 
 $("submitOutputForm").addEventListener("submit", (event) => {
@@ -804,7 +857,7 @@ $("submitOutputForm").addEventListener("submit", (event) => {
     target_repo: form.get("target_repo"),
     output_commit: form.get("output_commit"),
     message: form.get("message")
-  });
+  }, event.target);
 });
 
 $("reviewTaskForm").addEventListener("submit", (event) => {
@@ -816,7 +869,7 @@ $("reviewTaskForm").addEventListener("submit", (event) => {
     reviewer: form.get("reviewer"),
     decision: form.get("decision"),
     notes: form.get("notes")
-  });
+  }, event.target);
 });
 
 $("recordAttemptForm").addEventListener("submit", (event) => {
@@ -830,7 +883,7 @@ $("recordAttemptForm").addEventListener("submit", (event) => {
     target_repo: form.get("target_repo"),
     output_commit: form.get("output_commit"),
     message: form.get("message")
-  });
+  }, event.target);
 });
 
 $("verificationFailedForm").addEventListener("submit", (event) => {
@@ -842,7 +895,7 @@ $("verificationFailedForm").addEventListener("submit", (event) => {
     reviewer: form.get("reviewer"),
     output: form.get("output"),
     reason: form.get("reason")
-  });
+  }, event.target);
 });
 
 $("withdrawOutputForm").addEventListener("submit", (event) => {
@@ -854,7 +907,7 @@ $("withdrawOutputForm").addEventListener("submit", (event) => {
     actor: form.get("actor"),
     output: form.get("output"),
     reason: form.get("reason")
-  });
+  }, event.target);
 });
 
 $("supersedeOutputForm").addEventListener("submit", (event) => {
@@ -867,7 +920,7 @@ $("supersedeOutputForm").addEventListener("submit", (event) => {
     old_output: form.get("old_output"),
     new_output: form.get("new_output"),
     reason: form.get("reason")
-  });
+  }, event.target);
 });
 
 $("cancelReviewForm").addEventListener("submit", (event) => {
@@ -878,7 +931,7 @@ $("cancelReviewForm").addEventListener("submit", (event) => {
     task_id: form.get("task_id"),
     actor: form.get("actor"),
     reason: form.get("reason")
-  });
+  }, event.target);
 });
 
 $("addEventForm").addEventListener("submit", (event) => {
@@ -890,7 +943,7 @@ $("addEventForm").addEventListener("submit", (event) => {
     actor: form.get("actor"),
     event_type: form.get("event_type"),
     message: form.get("message")
-  });
+  }, event.target);
 });
 
 loadData().catch((error) => {
