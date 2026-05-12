@@ -15,6 +15,20 @@ Treat Git as the operating system:
 - Website: human interface that reads Git-derived data and turns edits into PRs/MRs instead of mutating canonical state directly.
 - Agents: use deterministic scripts first; use LLM judgment only to draft, summarize, review quality, or propose changes.
 
+**Always pull latest Git state before reading files or making edits.** Every `git_pm.py` command automatically runs `git pull --ff-only` before touching files. Use `--no-pull` only when working offline or when you have already pulled in the same session. If the pull fails (no remote, diverged branch), the command prints a warning and continues so you can still work locally.
+
+**Check for conflicts before every write operation.** All write commands (`create-task`, `update-task`, `submit-output`, `review-task`, etc.) run a conflict scan before applying changes. If hard errors are found (missing project, missing task), the command always aborts. If only warnings are found (duplicate title, status regression, uncommitted working-tree changes), the command prints them and requires explicit confirmation:
+
+```powershell
+# Re-run with --confirm to acknowledge warnings and proceed
+git_pm.py create-task ... --confirm
+
+# Or supply a reason, which also counts as confirmation
+git_pm.py update-task ... --reason "Reverting to Backlog after scope cut"
+```
+
+Note: commands that already require `--reason` (record-verification-failed, withdraw-output, supersede-output, cancel-review) treat the provided reason as automatic confirmation for warnings.
+
 Keep implementation codebases in their own GitHub/GitLab repos. This management repo stores links, intent, tasks, reviews, and source-of-truth project metadata.
 
 It is acceptable and encouraged to add deterministic scripts, importers, compiled data, or website views when a project develops special navigation or reporting needs that the generic Project Hub does not cover. Examples include scripts that ingest user stories, trace requirements into tasks, or add website pages for project-specific catalogs. Keep these extensions reviewable, documented, validated, committed, and pushed with the rest of the Project Hub.
@@ -212,6 +226,8 @@ Treat live docs and historical records differently. Update live docs when termin
 
 ## Safety Rules
 
+- Always pull latest Git state before reading or modifying project files (`git pull --ff-only`). Use `--no-pull` only when explicitly working offline or when you have already pulled in the same session.
+- Always check for conflicts before applying any write operation. Hard errors (missing project, missing task) block the command unconditionally. Warnings (duplicate titles, status regression, uncommitted changes) block the command until the requestor re-runs with `--confirm` or `--reason`. Document the reason when overriding a warning.
 - Do not trust hand-copied IDs. Allocate IDs through the controller or website backend and validate every PR/MR.
 - Do not use Git Issues as task state for this workflow. Use Git files, event/review logs, and PRs/MRs.
 - Do not let the website mutate the default branch directly. It must create a branch and PR/MR, or produce a local proposal in dry-run mode.

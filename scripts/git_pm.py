@@ -210,6 +210,148 @@ def git_commit(repo: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def pull_latest(repo: Path) -> tuple[bool, str]:
+    """Best-effort git pull --ff-only. Returns (success, message). Never raises."""
+    if not (repo / ".git").exists():
+        return False, "not a git repository - skipping pull"
+    remote = git(["remote", "get-url", "origin"], repo)
+    if remote.returncode != 0:
+        return False, "no remote 'origin' configured - skipping pull"
+    result = git(["pull", "--ff-only", "--quiet"], repo)
+    if result.returncode == 0:
+        return True, result.stdout.strip() or "already up to date"
+    return False, result.stderr.strip() or result.stdout.strip() or "git pull failed"
+
+
+_STATUS_ORDER = ["Backlog", "In Progress", "Blocked", "In Review", "Done", "Verified"]
+
+
+def detect_conflicts(repo: Path, registry: dict, command: str, args: argparse.Namespace) -> list[dict]:
+    """Detect potential conflicts before applying a write operation.
+    Returns a list of {level, code, message} dicts (level is 'error' or 'warn')."""
+    conflicts: list[dict] = []
+
+    # Check for uncommitted working-tree changes
+    if (repo / ".git").exists():
+        wt = git(["status", "--porcelain"], repo)
+        if wt.returncode == 0 and wt.stdout.strip():
+            conflicts.append({
+                "level": "warn",
+                "code": "UNCOMMITTED_CHANGES",
+                "message": "working tree has uncommitted changes - your edit may conflict with local modifications",
+            })
+
+    if command == "create-task":
+        project_id = getattr(args, "project_id", "")
+        title = getattr(args, "title", "")
+        if project_id and project_id not in registry.get("projects", {}):
+            conflicts.append({"level": "error", "code": "PROJECT_NOT_FOUND",
+                               "message": f"project {project_id} not found in registry"})
+        else:
+            for tid, ref in registry.get("tasks", {}).items():
+                if (ref.get("project_id") == project_id and
+                        ref.get("title", "").strip().lower() == title.strip().lower()):
+                    conflicts.append({"level": "warn", "code": "DUPLICATE_TASK_TITLE",
+                                      "message": f"task {tid} in {project_id} already has the same title '{title}'"})
+
+    elif command in ("update-task", "submit-output", "record-attempt", "review-task",
+                     "record-verification-failed", "withdraw-output", "supersede-output",
+                     "cancel-review", "add-event"):
+        task_id = getattr(args, "task_id", "")
+        ref = registry.get("tasks", {}).get(task_id)
+        if not ref:
+            conflicts.append({"level": "error", "code": "TASK_NOT_FOUND",
+                               "message": f"task {task_id} not found in registry"})
+        else:
+            current_status = ref.get("status", "")
+            if command == "update-task":
+                new_status = getattr(args, "status", "") or ""
+                if current_status in HISTORICAL_TASK_STATUSES:
+                    conflicts.append({"level": "warn", "code": "HISTORICAL_TASK_EDIT",
+                                      "message": f"{task_id} is '{current_status}' (historical); editing a completed task requires confirmation"})
+                elif (new_status and current_status in _STATUS_ORDER and new_status in _STATUS_ORDER and
+                        _STATUS_ORDER.index(new_status) < _STATUS_ORDER.index(current_status) - 1):
+                    conflicts.append({"level": "warn", "code": "STATUS_REGRESSION",
+                                      "message": f"moving {task_id} from '{current_status}' to '{new_status}' skips multiple lifecycle stages"})
+            elif command == "review-task":
+                if current_status not in ("In Review",) and current_status not in HISTORICAL_TASK_STATUSES:
+                    conflicts.append({"level": "warn", "code": "UNEXPECTED_REVIEW_STATE",
+                                      "message": f"{task_id} is '{current_status}', not 'In Review'; review may be premature"})
+            elif command in ("submit-output", "record-attempt"):
+                if current_status in HISTORICAL_TASK_STATUSES:
+                    conflicts.append({"level": "warn", "code": "HISTORICAL_TASK_OUTPUT",
+                                      "message": f"{task_id} is already '{current_status}'; submitting output on a completed task requires confirmation"})
+
+    elif command in ("create-doc", "propose-feature"):
+        project_id = getattr(args, "project_id", "")
+        title = getattr(args, "title", "")
+        if project_id and project_id not in registry.get("projects", {}):
+            conflicts.append({"level": "error", "code": "PROJECT_NOT_FOUND",
+                               "message": f"project {project_id} not found in registry"})
+        else:
+            for did, ref in registry.get("docs", {}).items():
+                if (ref.get("project_id") == project_id and
+                        ref.get("title", "").strip().lower() == title.strip().lower()):
+                    conflicts.append({"level": "warn", "code": "DUPLICATE_DOC_TITLE",
+                                      "message": f"doc {did} in {project_id} already has the same title '{title}'"})
+
+    elif command == "create-milestone":
+        project_id = getattr(args, "project_id", "")
+        title = getattr(args, "title", "")
+        if project_id and project_id not in registry.get("projects", {}):
+            conflicts.append({"level": "error", "code": "PROJECT_NOT_FOUND",
+                               "message": f"project {project_id} not found in registry"})
+        else:
+            for mid, ref in registry.get("milestones", {}).items():
+                if (ref.get("project_id") == project_id and
+                        ref.get("title", "").strip().lower() == title.strip().lower()):
+                    conflicts.append({"level": "warn", "code": "DUPLICATE_MILESTONE_TITLE",
+                                      "message": f"milestone {mid} in {project_id} already has the same title '{title}'"})
+
+    elif command == "register-repo":
+        project_id = getattr(args, "project_id", "")
+        name = getattr(args, "name", "")
+        if project_id and project_id not in registry.get("projects", {}):
+            conflicts.append({"level": "error", "code": "PROJECT_NOT_FOUND",
+                               "message": f"project {project_id} not found in registry"})
+        else:
+            project = registry.get("projects", {}).get(project_id, {})
+            if name in project.get("repos", []):
+                conflicts.append({"level": "warn", "code": "DUPLICATE_REPO_NAME",
+                                   "message": f"repo '{name}' is already registered for {project_id}"})
+
+    return conflicts
+
+
+def check_conflicts_and_confirm(conflicts: list[dict], args: argparse.Namespace, command: str) -> bool:
+    """Print detected conflicts and determine whether to proceed.
+    Hard errors always block. Warnings block unless --confirm or --reason is provided.
+    Returns True to proceed, False to abort (caller should return exit code 3)."""
+    if not conflicts:
+        return True
+    errors = [c for c in conflicts if c["level"] == "error"]
+    warnings = [c for c in conflicts if c["level"] == "warn"]
+    if errors:
+        print(f"Conflict check failed for '{command}' - cannot proceed:", file=sys.stderr)
+        for c in errors:
+            print(f"  ERROR {c['code']}: {c['message']}", file=sys.stderr)
+        for c in warnings:
+            print(f"  WARN  {c['code']}: {c['message']}", file=sys.stderr)
+        return False
+    confirmed = getattr(args, "confirm", False) or bool(getattr(args, "reason", ""))
+    if not confirmed:
+        print(f"Conflicts detected for '{command}' - re-run with --confirm or --reason 'rationale' to proceed:",
+              file=sys.stderr)
+        for c in warnings:
+            print(f"  WARN  {c['code']}: {c['message']}", file=sys.stderr)
+        return False
+    reason = getattr(args, "reason", "") or "(confirmed)"
+    print(f"Proceeding with '{command}' despite warnings (reason: {reason}):")
+    for c in warnings:
+        print(f"  WARN  {c['code']}: {c['message']}")
+    return True
+
+
 def file_sha256(path: Path) -> str:
     if not path.exists() or path.is_dir():
         return ""
@@ -1490,8 +1632,19 @@ def validate_repo(repo: Path) -> list[dict]:
     return issues
 
 
+def _do_pull(repo: Path, args: argparse.Namespace) -> None:
+    """Attempt git pull unless --no-pull is set. Prints a warning on failure but never raises."""
+    if getattr(args, "no_pull", False):
+        return
+    ok, msg = pull_latest(repo)
+    if not ok:
+        print(f"git pull: {msg}", file=sys.stderr)
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
-    issues = validate_repo(repo_arg(args.repo))
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    issues = validate_repo(repo)
     if args.json:
         print(json.dumps({"issues": issues}, indent=2))
     else:
@@ -1776,6 +1929,7 @@ def compile_data(repo: Path) -> dict:
 
 def cmd_compile(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
+    _do_pull(repo, args)
     data = compile_data(repo)
     output = repo / ".project-hub/site-data/project-hub.json"
     search_output = repo / ".project-hub/site-data/search-index.json"
@@ -1796,7 +1950,9 @@ def print_task_lines(tasks: list[dict]) -> None:
 
 
 def cmd_my_tasks(args: argparse.Namespace) -> int:
-    data = compile_data(repo_arg(args.repo))
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    data = compile_data(repo)
     rows = assigned_tasks(data["tasks"], args.user, args.include_done, data.get("people", []))
     if args.json:
         print(json.dumps({"user": args.user, "tasks": rows}, indent=2))
@@ -1806,7 +1962,9 @@ def cmd_my_tasks(args: argparse.Namespace) -> int:
 
 
 def cmd_project_status(args: argparse.Namespace) -> int:
-    data = compile_data(repo_arg(args.repo))
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    data = compile_data(repo)
     summary = project_status_summary(data, args.project_id)
     if args.json:
         print(json.dumps(summary, indent=2))
@@ -1831,7 +1989,9 @@ def cmd_project_status(args: argparse.Namespace) -> int:
 
 
 def cmd_review_queue(args: argparse.Namespace) -> int:
-    data = compile_data(repo_arg(args.repo))
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    data = compile_data(repo)
     rows = data.get("review_queue", [])
     if args.json:
         print(json.dumps({"review_queue": rows}, indent=2))
@@ -1844,7 +2004,9 @@ def cmd_review_queue(args: argparse.Namespace) -> int:
 
 
 def cmd_blocked_tasks(args: argparse.Namespace) -> int:
-    data = compile_data(repo_arg(args.repo))
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    data = compile_data(repo)
     rows = blocked_tasks(data["tasks"])
     if args.json:
         print(json.dumps({"blocked_tasks": rows}, indent=2))
@@ -1854,7 +2016,9 @@ def cmd_blocked_tasks(args: argparse.Namespace) -> int:
 
 
 def cmd_stale_work(args: argparse.Namespace) -> int:
-    data = compile_data(repo_arg(args.repo))
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    data = compile_data(repo)
     rows = stale_work(data["tasks"], data["events"], args.days)
     if args.json:
         print(json.dumps({"days": args.days, "stale_work": rows}, indent=2))
@@ -1947,7 +2111,9 @@ def audit_docs(repo: Path) -> list[dict]:
 
 
 def cmd_audit_docs(args: argparse.Namespace) -> int:
-    issues = audit_docs(repo_arg(args.repo))
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    issues = audit_docs(repo)
     if args.json:
         print(json.dumps({"issues": issues}, indent=2))
     else:
@@ -1961,6 +2127,7 @@ def cmd_audit_docs(args: argparse.Namespace) -> int:
 
 def cmd_create_project(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
+    _do_pull(repo, args)
     registry = load_registry(repo)
     project_id = allocate_id(registry, "project")
     project = make_project_record(project_id, args.name, args.owner, args.type, args.status)
@@ -1989,7 +2156,11 @@ def create_task_payload(registry: dict, project_id: str, title: str, assigned_to
 
 def cmd_create_task(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
+    _do_pull(repo, args)
     registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "create-task", args)
+    if not check_conflicts_and_confirm(conflicts, args, "create-task"):
+        return 3
     task_id, path, task = create_task_payload(registry, args.project_id, args.title, args.assigned_to, args.role, args.expected_output, args.target_repo)
     write_text(repo / path, dump(task))
     for rel, text in task_support_files(path, task).items():
@@ -2001,7 +2172,11 @@ def cmd_create_task(args: argparse.Namespace) -> int:
 
 def cmd_create_milestone(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
+    _do_pull(repo, args)
     registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "create-milestone", args)
+    if not check_conflicts_and_confirm(conflicts, args, "create-milestone"):
+        return 3
     project = registry.get("projects", {}).get(args.project_id)
     if not project:
         raise GitPMError(f"missing project {args.project_id}")
@@ -2023,7 +2198,11 @@ def cmd_create_milestone(args: argparse.Namespace) -> int:
 
 def cmd_create_doc(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
+    _do_pull(repo, args)
     registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "create-doc", args)
+    if not check_conflicts_and_confirm(conflicts, args, "create-doc"):
+        return 3
     project = registry.get("projects", {}).get(args.project_id)
     if not project:
         raise GitPMError(f"missing project {args.project_id}")
@@ -2051,6 +2230,12 @@ def propose_feature_actions(repo: Path, registry: dict, payload: dict) -> tuple[
 
 
 def cmd_propose_feature(args: argparse.Namespace) -> int:
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "propose-feature", args)
+    if not check_conflicts_and_confirm(conflicts, args, "propose-feature"):
+        return 3
     payload = {
         "type": "propose_feature",
         "project_id": args.project_id,
@@ -2064,7 +2249,7 @@ def cmd_propose_feature(args: argparse.Namespace) -> int:
         "task_breakdown": args.task_breakdown,
         "decision_needed": args.decision_needed,
     }
-    result = apply_payload(repo_arg(args.repo), payload)
+    result = apply_payload(repo, payload)
     print(json.dumps(result, indent=2))
     return 0
 
@@ -2459,64 +2644,124 @@ def apply_payload(repo: Path, payload: dict) -> dict:
 
 
 def cmd_update_task(args: argparse.Namespace) -> int:
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "update-task", args)
+    if not check_conflicts_and_confirm(conflicts, args, "update-task"):
+        return 3
     payload = {key: value for key, value in vars(args).items() if value not in (None, "")}
     payload["type"] = "update_task"
-    result = apply_payload(repo_arg(args.repo), payload)
+    result = apply_payload(repo, payload)
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_add_event(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "add_event", "task_id": args.task_id, "actor": args.actor, "event_type": args.event_type, "message": args.message})
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "add-event", args)
+    if not check_conflicts_and_confirm(conflicts, args, "add-event"):
+        return 3
+    result = apply_payload(repo, {"type": "add_event", "task_id": args.task_id, "actor": args.actor, "event_type": args.event_type, "message": args.message})
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_submit_output(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "submit_output", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message, "target_repo": args.target_repo, "output_commit": args.output_commit})
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "submit-output", args)
+    if not check_conflicts_and_confirm(conflicts, args, "submit-output"):
+        return 3
+    result = apply_payload(repo, {"type": "submit_output", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message, "target_repo": args.target_repo, "output_commit": args.output_commit})
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_review_task(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "review_task", "task_id": args.task_id, "reviewer": args.reviewer, "decision": args.decision, "notes": args.notes})
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "review-task", args)
+    if not check_conflicts_and_confirm(conflicts, args, "review-task"):
+        return 3
+    result = apply_payload(repo, {"type": "review_task", "task_id": args.task_id, "reviewer": args.reviewer, "decision": args.decision, "notes": args.notes})
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_record_attempt(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "record_attempt", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message, "target_repo": args.target_repo, "output_commit": args.output_commit})
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "record-attempt", args)
+    if not check_conflicts_and_confirm(conflicts, args, "record-attempt"):
+        return 3
+    result = apply_payload(repo, {"type": "record_attempt", "task_id": args.task_id, "actor": args.actor, "output": args.output, "message": args.message, "target_repo": args.target_repo, "output_commit": args.output_commit})
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_record_verification_failed(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "record_verification_failed", "task_id": args.task_id, "reviewer": args.reviewer, "reason": args.reason, "output": args.output})
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "record-verification-failed", args)
+    if not check_conflicts_and_confirm(conflicts, args, "record-verification-failed"):
+        return 3
+    result = apply_payload(repo, {"type": "record_verification_failed", "task_id": args.task_id, "reviewer": args.reviewer, "reason": args.reason, "output": args.output})
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_withdraw_output(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "withdraw_output", "task_id": args.task_id, "actor": args.actor, "reason": args.reason, "output": args.output})
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "withdraw-output", args)
+    if not check_conflicts_and_confirm(conflicts, args, "withdraw-output"):
+        return 3
+    result = apply_payload(repo, {"type": "withdraw_output", "task_id": args.task_id, "actor": args.actor, "reason": args.reason, "output": args.output})
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_supersede_output(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "supersede_output", "task_id": args.task_id, "actor": args.actor, "old_output": args.old_output, "new_output": args.new_output, "reason": args.reason})
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "supersede-output", args)
+    if not check_conflicts_and_confirm(conflicts, args, "supersede-output"):
+        return 3
+    result = apply_payload(repo, {"type": "supersede_output", "task_id": args.task_id, "actor": args.actor, "old_output": args.old_output, "new_output": args.new_output, "reason": args.reason})
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_cancel_review(args: argparse.Namespace) -> int:
-    result = apply_payload(repo_arg(args.repo), {"type": "cancel_review", "task_id": args.task_id, "actor": args.actor, "reason": args.reason})
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "cancel-review", args)
+    if not check_conflicts_and_confirm(conflicts, args, "cancel-review"):
+        return 3
+    result = apply_payload(repo, {"type": "cancel_review", "task_id": args.task_id, "actor": args.actor, "reason": args.reason})
     print(json.dumps(result, indent=2))
     return 0
 
 
 def cmd_register_repo(args: argparse.Namespace) -> int:
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    conflicts = detect_conflicts(repo, registry, "register-repo", args)
+    if not check_conflicts_and_confirm(conflicts, args, "register-repo"):
+        return 3
     result = apply_payload(
-        repo_arg(args.repo),
+        repo,
         {
             "type": "register_repo",
             "project_id": args.project_id,
@@ -2532,8 +2777,10 @@ def cmd_register_repo(args: argparse.Namespace) -> int:
 
 
 def cmd_register_asset(args: argparse.Namespace) -> int:
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
     result = apply_payload(
-        repo_arg(args.repo),
+        repo,
         {
             "type": "register_asset",
             "project_id": args.project_id,
@@ -3017,6 +3264,13 @@ def cmd_init_gitlab(args: argparse.Namespace) -> int:
 
 def add_common_repo(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--repo", default=os.environ.get("GPM_REPO", "."), help="Project management repository path")
+    parser.add_argument("--no-pull", action="store_true", help="Skip the automatic git pull before executing")
+
+
+def add_confirm_args(parser: argparse.ArgumentParser) -> None:
+    """Add --confirm / --reason flags for write commands that gate on conflict detection."""
+    parser.add_argument("--confirm", action="store_true", help="Acknowledge detected warnings and proceed anyway")
+    parser.add_argument("--reason", default="", help="Reason for proceeding despite detected warnings")
 
 
 def add_provider_args(parser: argparse.ArgumentParser) -> None:
@@ -3113,6 +3367,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--owner", required=True)
     p.add_argument("--type", default="game")
     p.add_argument("--status", default="Planning")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_create_project)
 
     p = sub.add_parser("create-task")
@@ -3123,6 +3378,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", default="")
     p.add_argument("--expected-output", required=True)
     p.add_argument("--target-repo", default="")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_create_task)
 
     p = sub.add_parser("create-milestone")
@@ -3131,6 +3387,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", required=True)
     p.add_argument("--owner", required=True)
     p.add_argument("--status", choices=sorted(MILESTONE_STATUSES), default="Planned")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_create_milestone)
 
     p = sub.add_parser("create-doc")
@@ -3139,6 +3396,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", required=True)
     p.add_argument("--owner", required=True)
     p.add_argument("--doc-type", default="proposal")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_create_doc)
 
     p = sub.add_parser("propose-feature")
@@ -3153,6 +3411,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--risks", default="")
     p.add_argument("--task-breakdown", default="")
     p.add_argument("--decision-needed", default="")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_propose_feature)
 
     p = sub.add_parser("update-task")
@@ -3180,6 +3439,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ai-update", default="")
     p.add_argument("--user-update", default="")
     p.add_argument("--event-message", default="")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_update_task)
 
     p = sub.add_parser("add-event")
@@ -3188,6 +3448,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", required=True)
     p.add_argument("--event-type", default="update")
     p.add_argument("--message", required=True)
+    add_confirm_args(p)
     p.set_defaults(func=cmd_add_event)
 
     p = sub.add_parser("submit-output")
@@ -3198,6 +3459,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--target-repo", default="")
     p.add_argument("--output-commit", default="")
     p.add_argument("--message", default="")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_submit_output)
 
     p = sub.add_parser("review-task")
@@ -3206,6 +3468,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reviewer", required=True)
     p.add_argument("--decision", choices=sorted(REVIEW_DECISIONS), required=True)
     p.add_argument("--notes", default="")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_review_task)
 
     p = sub.add_parser("record-attempt")
@@ -3216,6 +3479,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--target-repo", default="")
     p.add_argument("--output-commit", default="")
     p.add_argument("--message", default="")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_record_attempt)
 
     p = sub.add_parser("record-verification-failed")
@@ -3224,6 +3488,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reviewer", required=True)
     p.add_argument("--reason", required=True)
     p.add_argument("--output", default="")
+    p.add_argument("--confirm", action="store_true", help="Acknowledge detected warnings and proceed anyway")
     p.set_defaults(func=cmd_record_verification_failed)
 
     p = sub.add_parser("withdraw-output")
@@ -3232,6 +3497,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", required=True)
     p.add_argument("--reason", required=True)
     p.add_argument("--output", default="")
+    p.add_argument("--confirm", action="store_true", help="Acknowledge detected warnings and proceed anyway")
     p.set_defaults(func=cmd_withdraw_output)
 
     p = sub.add_parser("supersede-output")
@@ -3241,6 +3507,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--new-output", required=True)
     p.add_argument("--old-output", default="")
     p.add_argument("--reason", required=True)
+    p.add_argument("--confirm", action="store_true", help="Acknowledge detected warnings and proceed anyway")
     p.set_defaults(func=cmd_supersede_output)
 
     p = sub.add_parser("cancel-review")
@@ -3248,6 +3515,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task-id", required=True)
     p.add_argument("--actor", required=True)
     p.add_argument("--reason", required=True)
+    p.add_argument("--confirm", action="store_true", help="Acknowledge detected warnings and proceed anyway")
     p.set_defaults(func=cmd_cancel_review)
 
     p = sub.add_parser("register-repo")
@@ -3258,6 +3526,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--url", required=True)
     p.add_argument("--default-branch", default="main")
     p.add_argument("--role", default="")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_register_repo)
 
     p = sub.add_parser("register-asset")
@@ -3271,6 +3540,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--used-by", default="")
     p.add_argument("--owner", required=True)
     p.add_argument("--status", default="draft")
+    add_confirm_args(p)
     p.set_defaults(func=cmd_register_asset)
 
     p = sub.add_parser("demo")
