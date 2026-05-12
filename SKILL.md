@@ -31,6 +31,8 @@ Note: commands that already require `--reason` (record-verification-failed, with
 
 **Use Project Hub scripts as far as possible.** Prefer `scripts/git_pm.py` commands, generated launch scripts, smoke tests, and deterministic project-specific scripts over hand-editing Project Hub files. This applies to initialization, validation, compile/audit, project health checks, task creation/updates, documents, milestones, repo registration, asset registration, events, attempts, reviews, withdrawals, supersessions, cancellation, and website startup. Treat direct YAML/Markdown edits as a fallback for one-off prose or a documented script gap; after any direct edit, run the relevant controller validation/audit/compile commands before committing. If a workflow becomes repeated or structurally important, add or extend a deterministic script or website function instead of continuing manual edits.
 
+**Review proposed content before writing it.** Before adding or modifying Project Hub records, docs, tasks, assets, policies, templates, or reviews from user-provided content, inspect the proposed content itself and compare it against existing repo state. Flag inconsistencies, contradictions, stale assumptions, missing owners or staff emails, ambiguous scope, duplicate records, invalid IDs/dependencies, unverifiable outputs, broken links/assets, leaked secrets, unrealistic status claims, and anything else likely to contaminate canonical project state. Do not silently encode questionable information as source of truth; either resolve it with the user, keep it out of the repo, or put it in a PR/MR with explicit notes for the project owner, team lead, or accountable function owner to review.
+
 Keep implementation codebases in their own GitHub/GitLab repos. This management repo stores links, intent, tasks, reviews, and source-of-truth project metadata.
 
 It is acceptable and encouraged to add deterministic scripts, importers, compiled data, or website views when a project develops special navigation or reporting needs that the generic Project Hub does not cover. Examples include scripts that ingest user stories, trace requirements into tasks, or add website pages for project-specific catalogs. Keep these extensions reviewable, documented, validated, committed, and pushed with the rest of the Project Hub.
@@ -106,13 +108,14 @@ Use `scripts/git_pm.py` for deterministic work before editing canonical Project 
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
 ```
 
-Use the Node.js website runtime for the deployable human UI:
+Use the copied Project Hub website runtime for the deployable human UI. Project Hub initialization copies the bundled web template into the initialized hub under `website/`, writes local launcher scripts, and initializes the launch environment from that hub's registry/provider settings:
 
 ```powershell
-cd "...\git-based-project-management\assets\website"
-$env:GPM_REPO = "C:\path\to\project-hub"
-npm start
+cd "C:\path\to\project-hub"
+.\start-website.ps1
 ```
+
+The copied runtime should read from the initialized hub itself (`GPM_REPO` points at the hub root and `GPM_STATIC_DIR` points at `website/static`). The generated launch scripts prefill `GPM_PROVIDER`, `GPM_GITHUB_REPO`, `GPM_GITLAB_URL`, and `GPM_GITLAB_PROJECT` from the initialization inputs; users only add local tokens and opt into live PR/MR creation when ready. Use the source `assets/website` runtime only when developing the skill's website template itself.
 
 Use Docker for container deployment:
 
@@ -137,9 +140,9 @@ Use the bundled smoke tests before handing a setup to another agent:
    - Token with repo/API write permission if the website or agent must create PRs/MRs.
    - Local Project Hub repo path.
    - User role and permission intent.
-2. Run `init` for a new management repo, or clone an existing repo.
-3. Run `validate`.
-4. Run `website` locally for review, then deploy the Node.js website runtime with Docker or the team's preferred runner.
+2. Run `init` for a new management repo, or clone an existing repo. Initialization must copy the bundled Node.js website template into the Project Hub as `website/server.mjs` and `website/static/`, generate `start-website.ps1` and `start-website.sh`, and preconfigure those launchers from the hub's provider/repository settings.
+3. Confirm the init self-test passed. Initialization runs validation and compile after seeding files and website assets; resolve any reported errors before committing or deploying.
+4. Run the copied website from the Project Hub root for review, then deploy that initialized website runtime with Docker or the team's preferred runner.
 5. Commit the Project Hub repo and push it to GitHub/GitLab.
 
 Never commit tokens. Prefer environment variables:
@@ -159,11 +162,12 @@ Use Git-local files for project intent:
 
 1. Pull latest Git state.
 2. Read `START_HERE_FOR_AGENTS.md`, project README, roadmap, milestone, task folder, and Markdown docs from the local repo.
-3. Use the website/API or controller to propose changes as PRs/MRs.
-4. Use direct task events and attempt/review commands for lightweight execution updates.
-5. Run `validate`, `audit-docs`, and `compile` before merging.
+3. Review any user-proposed additions or edits for consistency with existing repo facts before writing them.
+4. Use the website/API or controller to propose changes as PRs/MRs.
+5. Use direct task events and attempt/review commands for lightweight execution updates.
+6. Run `validate`, `audit-docs`, and `compile` before merging.
 
-Keep Project Hub repos synchronized after every file change. If an agent or website workflow modifies tracked Project Hub files such as `registry.yaml`, project/task YAML, docs, assets, policies, events, reviews, or templates, it must create a Git commit and push it to the configured remote before reporting the work complete. Do not leave successful Project Hub edits only in the local worktree. For durable changes that require review, push the proposal branch and provide the PR/MR instead of committing directly to the protected default branch. If commit or push is blocked by credentials, network, branch protection, or validation errors, stop and report the exact branch, files changed, validation state, and next command needed to finish synchronization.
+Keep Project Hub repos synchronized after every file change. If an agent or website workflow modifies tracked Project Hub files such as `registry.yaml`, project/task YAML, docs, assets, policies, events, reviews, or templates, it must create a Git commit and push it to the configured remote before reporting the work complete. Do not leave successful Project Hub edits only in the local worktree. For durable changes that require review, push the proposal branch and provide the PR/MR instead of committing directly to the protected default branch. When in doubt, every durable Project Hub file change should land through a PR/MR so the project owner, team lead, or accountable owner for the affected function/domain can review the diff before merge. If commit or push is blocked by credentials, network, branch protection, or validation errors, stop and report the exact branch, files changed, validation state, and next command needed to finish synchronization.
 
 Use PRs/MRs for durable changes:
 
@@ -230,6 +234,7 @@ Treat live docs and historical records differently. Update live docs when termin
 
 - Always pull latest Git state before reading or modifying project files (`git pull --ff-only`). Use `--no-pull` only when explicitly working offline or when you have already pulled in the same session.
 - Always check for conflicts before applying any write operation. Hard errors (missing project, missing task) block the command unconditionally. Warnings (duplicate titles, status regression, uncommitted changes) block the command until the requestor re-runs with `--confirm` or `--reason`. Document the reason when overriding a warning.
+- Always review user-proposed content before adding it to canonical Project Hub files. Flag and stop on contradictions, bad assumptions, broken references, missing accountable owners, unverifiable claims, duplicate work, unsafe links/assets, or secrets instead of normalizing them into the repo for someone to clean up later.
 - Do not trust hand-copied IDs. Allocate IDs through the controller or website backend and validate every PR/MR.
 - Do not use Git Issues as task state for this workflow. Use Git files, event/review logs, and PRs/MRs.
 - Do not let the website mutate the default branch directly. It must create a branch and PR/MR, or produce a local proposal in dry-run mode.
