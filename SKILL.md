@@ -147,11 +147,15 @@ Use the bundled smoke tests before handing a setup to another agent:
    - Project ID or initial project scope when multiple projects or hubs are in the same conversation.
 2. Run `doctor --interactive` to probe for:
    - Git executable.
+   - Python/controller script availability.
+   - Node.js availability for the copied website runtime.
    - Provider: `github` or `gitlab`.
    - GitHub repo path such as `owner/project-hub`, or GitLab project path such as `group/project-hub`.
    - Token with repo/API write permission if the website or agent must create PRs/MRs.
    - Local Project Hub repo path.
+   - Copied hub launch scripts and website runtime are present and runnable for the user's platform.
    - User role and permission intent.
+   If a required executable, runtime, controller script, or hub launcher is missing or not runnable, stop normal setup and prompt the user to install or repair it before treating the Project Hub as ready.
 3. Run `init` for a new management repo, or clone an existing repo. Initialization must copy the bundled Node.js website template into the Project Hub as `website/server.mjs` and `website/static/`, generate `start-website.ps1` and `start-website.sh`, and preconfigure those launchers from the hub's provider/repository settings.
 4. Ensure initialization embeds the current skill instructions into the Project Hub, including a full copy of `SKILL.md` under `.project-hub/skill/` and a README that references the original skill source repo (`https://github.com/Nimitae/git-based-project-management`) for future updates. This makes the hub self-describing when viewed without the local Codex skill installed.
 5. Ask whether to set up regular user attention checks for this hub. These checks should pull latest Git state, inspect PRs/MRs/issues/reviews/comments/mentions related to the user, and report relevant commits since the last check.

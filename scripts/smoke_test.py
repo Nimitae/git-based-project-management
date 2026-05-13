@@ -61,6 +61,22 @@ def main() -> int:
         run(["init", "--repo", str(repo), "--name", "Demo Project Hub", "--owner", "Terence"])
         if not (repo / "START_HERE_FOR_AGENTS.md").exists():
             raise RuntimeError("START_HERE_FOR_AGENTS.md was not created")
+        if not (repo / "website" / "server.mjs").exists():
+            raise RuntimeError("website runtime was not copied")
+        if not (repo / "start-website.ps1").exists():
+            raise RuntimeError("Windows website launcher was not created")
+        start_sh = repo / "start-website.sh"
+        if not start_sh.exists():
+            raise RuntimeError("Unix website launcher was not created")
+        if os.name != "nt" and not os.access(start_sh, os.X_OK):
+            raise RuntimeError("Unix website launcher is not executable")
+        doctor = json.loads(run(["doctor", "--repo", str(repo), "--json"]).stdout)
+        doctor_checks = {row["check"]: row for row in doctor["checks"]}
+        for check_name in ["python", "controller_script", "hub_website_runtime", "hub_launcher_windows", "hub_launcher_unix"]:
+            if check_name not in doctor_checks:
+                raise RuntimeError(f"doctor did not report {check_name}")
+            if not doctor_checks[check_name]["ok"]:
+                raise RuntimeError(f"doctor reported {check_name} is not runnable: {doctor_checks[check_name]}")
         embedded_skill = repo / ".project-hub" / "skill" / "SKILL.md"
         embedded_skill_readme = repo / ".project-hub" / "skill" / "README.md"
         if not embedded_skill.exists() or "Git-Based Project Management" not in embedded_skill.read_text(encoding="utf-8"):

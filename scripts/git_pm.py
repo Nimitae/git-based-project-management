@@ -157,6 +157,13 @@ def write_text(path: Path, text: str) -> None:
         handle.write(text)
 
 
+def make_executable(path: Path) -> None:
+    try:
+        path.chmod(path.stat().st_mode | 0o111)
+    except OSError:
+        pass
+
+
 def read_json_subset(path: Path, default):
     if not path.exists():
         return copy.deepcopy(default)
@@ -1101,7 +1108,9 @@ def setup_website(repo: Path, registry: dict) -> None:
         "",
         'node "$SCRIPT_DIR/website/server.mjs"',
     ]
-    write_text(repo / "start-website.sh", "\n".join(sh) + "\n")
+    start_sh = repo / "start-website.sh"
+    write_text(start_sh, "\n".join(sh) + "\n")
+    make_executable(start_sh)
 
 
 def template_files() -> dict[str, str]:
@@ -3218,6 +3227,66 @@ def cmd_website(args: argparse.Namespace) -> int:
     return 0
 
 
+def check_row(check: str, ok: bool, detail: str, prompt: str = "") -> dict:
+    row = {"check": check, "ok": ok, "detail": detail}
+    if prompt:
+        row["prompt"] = prompt
+    return row
+
+
+def hub_script_checks(repo: Path) -> list[dict]:
+    checks = [
+        check_row(
+            "python",
+            bool(sys.executable),
+            f"{sys.executable} ({sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro})" if sys.executable else "missing",
+            "Install Python 3 and re-run doctor.",
+        ),
+        check_row(
+            "controller_script",
+            (SKILL_ROOT / "scripts" / "git_pm.py").exists(),
+            str(SKILL_ROOT / "scripts" / "git_pm.py"),
+            "Reinstall or update the git-based-project-management skill so scripts/git_pm.py is present.",
+        ),
+        check_row(
+            "node",
+            bool(shutil.which("node")),
+            shutil.which("node") or "missing",
+            "Install Node.js so the copied Project Hub website launchers can run.",
+        ),
+    ]
+    if registry_path(repo).exists():
+        server_script = repo / "website" / "server.mjs"
+        checks.append(
+            check_row(
+                "hub_website_runtime",
+                server_script.exists(),
+                str(server_script),
+                "Re-run init with the current skill so the Project Hub website runtime is installed.",
+            )
+        )
+        ps1 = repo / "start-website.ps1"
+        checks.append(
+            check_row(
+                "hub_launcher_windows",
+                ps1.exists(),
+                str(ps1),
+                "Re-run init with the current skill so start-website.ps1 is generated.",
+            )
+        )
+        sh = repo / "start-website.sh"
+        sh_ok = sh.exists() and (os.name == "nt" or os.access(sh, os.X_OK))
+        checks.append(
+            check_row(
+                "hub_launcher_unix",
+                sh_ok,
+                f"{sh} ({'executable' if sh.exists() and os.access(sh, os.X_OK) else 'not executable' if sh.exists() else 'missing'})",
+                "Run chmod +x start-website.sh or re-run init with the current skill so the launcher is runnable.",
+            )
+        )
+    return checks
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
     provider = args.provider or os.environ.get("GPM_PROVIDER", "github")
@@ -3241,27 +3310,36 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         write_text(repo / ".project-hub/local.json", dump(local))
         print(f"Wrote non-secret local setup hints to {repo / '.project-hub/local.json'}")
     checks = [
-        {"check": "git", "ok": bool(shutil.which("git")), "detail": shutil.which("git") or "missing"},
-        {"check": "repo_path", "ok": repo.exists(), "detail": str(repo)},
-        {"check": "registry", "ok": registry_path(repo).exists(), "detail": str(registry_path(repo))},
-        {"check": "provider", "ok": provider in {"github", "gitlab"}, "detail": provider},
+        check_row("git", bool(shutil.which("git")), shutil.which("git") or "missing", "Install Git and re-run doctor."),
+        check_row("repo_path", repo.exists(), str(repo), "Create or clone the Project Hub repo, then re-run doctor."),
+        check_row("registry", registry_path(repo).exists(), str(registry_path(repo)), "Run git_pm.py init for a new hub, or point --repo at an initialized Project Hub."),
+        check_row("provider", provider in {"github", "gitlab"}, provider, "Choose provider github or gitlab."),
     ]
+    checks.extend(hub_script_checks(repo))
     if provider == "github":
         checks.extend(
             [
-                {"check": "github_repo", "ok": bool(github_repo), "detail": github_repo or "missing"},
-                {"check": "github_token", "ok": bool(github_token), "detail": "provided" if github_token else "missing"},
+                check_row("github_repo", bool(github_repo), github_repo or "missing", "Set GPM_GITHUB_REPO or pass --github-repo owner/repo."),
+                check_row("github_token", bool(github_token), "provided" if github_token else "missing", "Set GPM_GITHUB_TOKEN or GH_TOKEN before creating live GitHub PRs."),
             ]
         )
     if provider == "gitlab":
         checks.extend(
             [
-                {"check": "gitlab_url", "ok": bool(gitlab_url), "detail": gitlab_url or "missing"},
-                {"check": "gitlab_project", "ok": bool(gitlab_project), "detail": gitlab_project or "missing"},
-                {"check": "gitlab_token", "ok": bool(gitlab_token), "detail": "provided" if gitlab_token else "missing"},
+                check_row("gitlab_url", bool(gitlab_url), gitlab_url or "missing", "Set GPM_GITLAB_URL or pass --gitlab-url."),
+                check_row("gitlab_project", bool(gitlab_project), gitlab_project or "missing", "Set GPM_GITLAB_PROJECT or pass --gitlab-project group/project."),
+                check_row("gitlab_token", bool(gitlab_token), "provided" if gitlab_token else "missing", "Set GPM_GITLAB_TOKEN before creating live GitLab MRs."),
             ]
         )
-    print(json.dumps({"checks": checks}, indent=2) if args.json else "\n".join(f"{'OK' if row['ok'] else 'MISSING'} {row['check']}: {row['detail']}" for row in checks))
+    prompts = [row["prompt"] for row in checks if not row["ok"] and row.get("prompt")]
+    if args.json:
+        print(json.dumps({"checks": checks, "prompts": prompts}, indent=2))
+    else:
+        print("\n".join(f"{'OK' if row['ok'] else 'MISSING'} {row['check']}: {row['detail']}" for row in checks))
+        if prompts:
+            print("\nAction needed before installation/use:")
+            for prompt in prompts:
+                print(f"  - {prompt}")
     return 0
 
 
