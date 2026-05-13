@@ -19,6 +19,8 @@ Treat Git as the operating system:
 
 **Confirm the target Project Hub before acting.** A single conversation may involve multiple Project Hub repositories, linked implementation repos, or new hubs being initialized. Do not infer the active hub only from the current working directory, previous request, browser tab, or last-used repo when more than one hub is plausible. Before reading, writing, initializing, validating, reviewing, committing, or pushing, ensure the target hub path, provider/repo, project ID, and intended operation are explicit. Ask a concise clarification question when the target hub or operation is ambiguous; this is mandatory before initialization because `init` creates canonical source-of-truth files and website/runtime scaffolding.
 
+**Offer regular user attention checks for each new hub.** When first used to operate a Project Hub for a user, ask whether to set up recurring checks that pull the latest hub state and inspect related PRs/MRs, issues, review requests, comments, mentions, assignments, and relevant commits. If recurring checks are not set up and the user has not explicitly said to stop reminding them, recommend setting them up during each daily Project Hub check-in.
+
 **Check for conflicts before every write operation.** All write commands (`create-task`, `update-task`, `submit-output`, `review-task`, etc.) run a conflict scan before applying changes. If hard errors are found (missing project, missing task), the command always aborts. If only warnings are found (duplicate title, status regression, uncommitted working-tree changes), the command prints them and requires explicit confirmation:
 
 ```powershell
@@ -152,9 +154,10 @@ Use the bundled smoke tests before handing a setup to another agent:
    - User role and permission intent.
 3. Run `init` for a new management repo, or clone an existing repo. Initialization must copy the bundled Node.js website template into the Project Hub as `website/server.mjs` and `website/static/`, generate `start-website.ps1` and `start-website.sh`, and preconfigure those launchers from the hub's provider/repository settings.
 4. Ensure initialization embeds the current skill instructions into the Project Hub, including a full copy of `SKILL.md` under `.project-hub/skill/` and a README that references the original skill source repo (`https://github.com/Nimitae/git-based-project-management`) for future updates. This makes the hub self-describing when viewed without the local Codex skill installed.
-5. Confirm the init self-test passed. Initialization runs validation and compile after seeding files and website assets; resolve any reported errors before committing or deploying.
-6. Run the copied website from the Project Hub root for review, then deploy that initialized website runtime with Docker or the team's preferred runner.
-7. Commit the Project Hub repo and push it to GitHub/GitLab.
+5. Ask whether to set up regular user attention checks for this hub. These checks should pull latest Git state, inspect PRs/MRs/issues/reviews/comments/mentions related to the user, and report relevant commits since the last check.
+6. Confirm the init self-test passed. Initialization runs validation and compile after seeding files and website assets; resolve any reported errors before committing or deploying.
+7. Run the copied website from the Project Hub root for review, then deploy that initialized website runtime with Docker or the team's preferred runner.
+8. Commit the Project Hub repo and push it to GitHub/GitLab.
 
 Never commit tokens. Prefer environment variables:
 
@@ -177,6 +180,17 @@ Use Git-local files for project intent:
 4. Use the website/API or controller to propose changes as PRs/MRs.
 5. Use direct task events and attempt/review commands for lightweight execution updates.
 6. Run `validate`, `audit-docs`, and `compile` before merging.
+
+## Regular User Attention Checks
+
+For each Project Hub a user asks you to operate, track whether recurring attention checks are configured or explicitly declined:
+
+- On first use of a new hub, offer to set up a recurring check or reminder that pulls the latest Project Hub state and any linked repos needed for assigned work.
+- Check GitHub PRs or GitLab MRs involving the user as author, assignee, reviewer, requested reviewer, mention target, or participant with unresolved comments.
+- Check issues involving the user as assignee, reporter, mention target, or commenter, including new comments since the last check.
+- Check commits made to the Project Hub and linked implementation repos since the last check, then summarize changes that affect the user's tasks, reviews, docs, or decisions.
+- If no recurring check is configured and the user has not said "do not remind me again" or equivalent, recommend setting it up during each daily Project Hub check-in.
+- When a pull or provider check finds a PR/MR, issue, comment, review request, mention, or commit that needs the user's attention, propose the concrete next action: draft reply, comment, code/doc change, task event, task spec update, commit, or PR/MR. Ask the user whether to proceed before posting, committing, pushing, or changing provider state.
 
 Keep Project Hub repos synchronized after every file change. If an agent or website workflow modifies tracked Project Hub files such as `registry.yaml`, project/task YAML, docs, assets, policies, events, reviews, or templates, it must create a Git commit and push it to the configured remote before reporting the work complete. Do not leave successful Project Hub edits only in the local worktree. For durable changes that require review, push the proposal branch and provide the PR/MR instead of committing directly to the protected default branch. When in doubt, every durable Project Hub file change should land through a PR/MR so the project owner, team lead, or accountable owner for the affected function/domain can review the diff before merge. If commit or push is blocked by credentials, network, branch protection, or validation errors, stop and report the exact branch, files changed, validation state, and next command needed to finish synchronization.
 
@@ -262,6 +276,7 @@ Treat live docs and historical records differently. Update live docs when termin
 
 - Always pull latest Git state before reading or modifying project files (`git pull --ff-only`) and repeat pulls regularly during longer work or review sessions. Use `--no-pull` only when explicitly working offline or when you have already pulled in the same session and have a concrete reason not to refresh.
 - Do not initialize, mutate, validate, review, commit, or push a Project Hub when multiple hubs are plausible until the target hub path/repo and intended operation are explicit. Ask for clarification instead of guessing, especially before running `init`.
+- Do not let user-attention checks mutate provider state or repo state automatically. Draft replies, comments, changes, commits, or PRs/MRs are proposals until the user approves the specific action.
 - Always check for conflicts before applying any write operation. Hard errors (missing project, missing task) block the command unconditionally. Warnings (duplicate titles, status regression, uncommitted changes) block the command until the requestor re-runs with `--confirm` or `--reason`. Document the reason when overriding a warning.
 - Always review user-proposed content before adding it to canonical Project Hub files. Flag and stop on contradictions, bad assumptions, broken references, missing accountable owners, unverifiable claims, duplicate work, unsafe links/assets, or secrets instead of normalizing them into the repo for someone to clean up later.
 - Do not suggest or create a new task until existing tasks have been checked for identical, overlapping, or relevant objectives. Prefer updating or linking existing work when it already covers the request.
