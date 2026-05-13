@@ -17,6 +17,8 @@ Treat Git as the operating system:
 
 **Always pull latest Git state before reading files or making edits, and pull regularly during longer sessions.** Project Hub state is shared team knowledge and may change while you are working. Pull before making decisions, before creating or reviewing PRs/MRs, before writing files, before running planning/status summaries, and again after any pause or significant elapsed time. Every `git_pm.py` command automatically runs `git pull --ff-only` before touching files. Use `--no-pull` only when working offline or when you have already pulled in the same session and know no newer commits are needed. If the pull fails (no remote, diverged branch), the command prints a warning and continues so you can still work locally.
 
+**Confirm the target Project Hub before acting.** A single conversation may involve multiple Project Hub repositories, linked implementation repos, or new hubs being initialized. Do not infer the active hub only from the current working directory, previous request, browser tab, or last-used repo when more than one hub is plausible. Before reading, writing, initializing, validating, reviewing, committing, or pushing, ensure the target hub path, provider/repo, project ID, and intended operation are explicit. Ask a concise clarification question when the target hub or operation is ambiguous; this is mandatory before initialization because `init` creates canonical source-of-truth files and website/runtime scaffolding.
+
 **Check for conflicts before every write operation.** All write commands (`create-task`, `update-task`, `submit-output`, `review-task`, etc.) run a conflict scan before applying changes. If hard errors are found (missing project, missing task), the command always aborts. If only warnings are found (duplicate title, status regression, uncommitted working-tree changes), the command prints them and requires explicit confirmation:
 
 ```powershell
@@ -136,18 +138,23 @@ Use the bundled smoke tests before handing a setup to another agent:
 
 ## Setup Workflow
 
-1. Run `doctor --interactive` to probe for:
+1. Confirm the exact Project Hub target before initialization or cloning:
+   - Whether the user wants a new hub initialized, an existing hub cloned, or an existing local hub updated.
+   - Local target path and hub name.
+   - Project owner/admin, provider, remote repo path, and default branch expectations.
+   - Project ID or initial project scope when multiple projects or hubs are in the same conversation.
+2. Run `doctor --interactive` to probe for:
    - Git executable.
    - Provider: `github` or `gitlab`.
    - GitHub repo path such as `owner/project-hub`, or GitLab project path such as `group/project-hub`.
    - Token with repo/API write permission if the website or agent must create PRs/MRs.
    - Local Project Hub repo path.
    - User role and permission intent.
-2. Run `init` for a new management repo, or clone an existing repo. Initialization must copy the bundled Node.js website template into the Project Hub as `website/server.mjs` and `website/static/`, generate `start-website.ps1` and `start-website.sh`, and preconfigure those launchers from the hub's provider/repository settings.
-3. Ensure initialization embeds the current skill instructions into the Project Hub, including a full copy of `SKILL.md` under `.project-hub/skill/` and a README that references the original skill source repo (`https://github.com/Nimitae/git-based-project-management`) for future updates. This makes the hub self-describing when viewed without the local Codex skill installed.
-4. Confirm the init self-test passed. Initialization runs validation and compile after seeding files and website assets; resolve any reported errors before committing or deploying.
-5. Run the copied website from the Project Hub root for review, then deploy that initialized website runtime with Docker or the team's preferred runner.
-6. Commit the Project Hub repo and push it to GitHub/GitLab.
+3. Run `init` for a new management repo, or clone an existing repo. Initialization must copy the bundled Node.js website template into the Project Hub as `website/server.mjs` and `website/static/`, generate `start-website.ps1` and `start-website.sh`, and preconfigure those launchers from the hub's provider/repository settings.
+4. Ensure initialization embeds the current skill instructions into the Project Hub, including a full copy of `SKILL.md` under `.project-hub/skill/` and a README that references the original skill source repo (`https://github.com/Nimitae/git-based-project-management`) for future updates. This makes the hub self-describing when viewed without the local Codex skill installed.
+5. Confirm the init self-test passed. Initialization runs validation and compile after seeding files and website assets; resolve any reported errors before committing or deploying.
+6. Run the copied website from the Project Hub root for review, then deploy that initialized website runtime with Docker or the team's preferred runner.
+7. Commit the Project Hub repo and push it to GitHub/GitLab.
 
 Never commit tokens. Prefer environment variables:
 
@@ -254,6 +261,7 @@ Treat live docs and historical records differently. Update live docs when termin
 ## Safety Rules
 
 - Always pull latest Git state before reading or modifying project files (`git pull --ff-only`) and repeat pulls regularly during longer work or review sessions. Use `--no-pull` only when explicitly working offline or when you have already pulled in the same session and have a concrete reason not to refresh.
+- Do not initialize, mutate, validate, review, commit, or push a Project Hub when multiple hubs are plausible until the target hub path/repo and intended operation are explicit. Ask for clarification instead of guessing, especially before running `init`.
 - Always check for conflicts before applying any write operation. Hard errors (missing project, missing task) block the command unconditionally. Warnings (duplicate titles, status regression, uncommitted changes) block the command until the requestor re-runs with `--confirm` or `--reason`. Document the reason when overriding a warning.
 - Always review user-proposed content before adding it to canonical Project Hub files. Flag and stop on contradictions, bad assumptions, broken references, missing accountable owners, unverifiable claims, duplicate work, unsafe links/assets, or secrets instead of normalizing them into the repo for someone to clean up later.
 - Do not suggest or create a new task until existing tasks have been checked for identical, overlapping, or relevant objectives. Prefer updating or linking existing work when it already covers the request.
