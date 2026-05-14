@@ -437,7 +437,12 @@ def random_id(length: int = 5) -> str:
 
 
 def allocate_id(registry: dict, kind: str) -> str:
-    """Allocate a unique random ID for a hub entity (e.g. TASK-BAJQP).
+    """Allocate a unique random ID for a hub entity.
+
+    Tasks include a date segment for light chronological ordering:
+      TASK-20260514-BAJQP
+    All other entity types use the shorter form:
+      PROJ-MNQRV  DOC-W9CX2  MILESTONE-FNPND  etc.
 
     Random IDs prevent merge conflicts when multiple branches each create
     new entities simultaneously.  next_ids is intentionally not used.
@@ -445,8 +450,9 @@ def allocate_id(registry: dict, kind: str) -> str:
     prefix = ID_PREFIX[kind]
     section = "docs" if kind == "doc" else f"{kind}s"
     existing = set(registry.get(section, {}).keys())
+    date_seg = dt.date.today().strftime("%Y%m%d") if kind == "task" else ""
     for _ in range(200):
-        candidate = f"{prefix}-{random_id()}"
+        candidate = f"{prefix}-{date_seg}-{random_id()}" if date_seg else f"{prefix}-{random_id()}"
         if candidate not in existing:
             return candidate
     raise GitPMError(f"could not allocate a unique {kind} ID after 200 attempts")
@@ -798,7 +804,7 @@ def ensure_base_registry(name: str, owner: str, provider: str, github_repo: str,
     # Use random IDs for all seed entities so that fresh hubs never have next_ids
     # conflicts when multiple branches each create entities simultaneously.
     proj_id = f"PROJ-{random_id()}"
-    task_id = f"TASK-{random_id()}"
+    task_id = f"TASK-{dt.date.today().strftime('%Y%m%d')}-{random_id()}"
     doc_id  = f"DOC-{random_id()}"
     project = make_project_record(proj_id, name, owner, "game", "Active")
     task_path, task, task_ref = make_task(task_id, proj_id, name, "Confirm collaboration setup", owner, "PM", "Setup Confirmation")
@@ -1543,10 +1549,13 @@ def validate_repo(repo: Path) -> list[dict]:
         prefix = ID_PREFIX[kind]
         records = registry.get(section, {})
         for entity_id, row in records.items():
-            legacy_ok = re.fullmatch(rf"{re.escape(prefix)}\d+", entity_id)
-            random_ok = re.fullmatch(rf"{re.escape(prefix)}-[{re.escape(_ID_ALPHABET)}]{{5}}", entity_id)
-            if not (legacy_ok or random_ok):
-                issues.append(issue("error", "ID_FORMAT", f"{entity_id} should match {prefix}-XXXXX or legacy {prefix}#", "registry.yaml"))
+            legacy_ok  = re.fullmatch(rf"{re.escape(prefix)}\d+", entity_id)
+            random_ok  = re.fullmatch(rf"{re.escape(prefix)}-[{re.escape(_ID_ALPHABET)}]{{5}}", entity_id)
+            # Tasks also accept the date-stamped format: TASK-20260514-XXXXX
+            dated_ok   = (kind == "task" and re.fullmatch(rf"TASK-\d{{8}}-[{re.escape(_ID_ALPHABET)}]{{5}}", entity_id))
+            if not (legacy_ok or random_ok or dated_ok):
+                fmt_hint = f"{prefix}-YYYYMMDD-XXXXX or {prefix}-XXXXX" if kind == "task" else f"{prefix}-XXXXX"
+                issues.append(issue("error", "ID_FORMAT", f"{entity_id} should match {fmt_hint} or legacy {prefix}#", "registry.yaml"))
             rel = row.get("path") or row.get("readme")
             if rel and not safe_repo_path(repo, rel).exists():
                 issues.append(issue("error", "PATH_MISSING", f"{entity_id} path does not exist", rel))
@@ -3059,8 +3068,9 @@ def cmd_commit_summary(args: argparse.Namespace) -> int:
 
 # ── MR / PR Auto-Review ───────────────────────────────────────────────────────
 
-# Matches both legacy sequential IDs (TASK3) and new random IDs (TASK-BAJQP).
-_TASK_ID_RE = re.compile(rf"\bTASK(?:-[{re.escape(_ID_ALPHABET)}]{{5}}|\d+)\b")
+# Matches legacy sequential IDs (TASK3), date-stamped IDs (TASK-20260514-BAJQP),
+# and the earlier no-date random IDs (TASK-XXXXX) for backward compatibility.
+_TASK_ID_RE = re.compile(rf"\bTASK(?:-\d{{8}}-[{re.escape(_ID_ALPHABET)}]{{5}}|-[{re.escape(_ID_ALPHABET)}]{{5}}|\d+)\b")
 
 
 def extract_task_ids_from_text(text: str) -> list[str]:
