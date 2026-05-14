@@ -70,13 +70,13 @@ Then read the listed task folders, linked docs, recent events, and relevant impl
 When an owner proposes a new feature, create a reviewable feature proposal before creating execution tasks:
 
 ```powershell
-git_pm.py propose-feature --repo . --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya" --problem "Tutorial drop-off is not measurable" --value "Team can diagnose onboarding friction" --scope "Client events, backend ingest, validation dashboard" --task-breakdown "Design event spec; implement client events; add backend ingest; verify staging data"
+git_pm.py propose-feature --repo . --project-id PROJ-MNQRV --title "FTUE Data Tracking" --owner "Maya" --problem "Tutorial drop-off is not measurable" --value "Team can diagnose onboarding friction" --scope "Client events, backend ingest, validation dashboard" --task-breakdown "Design event spec; implement client events; add backend ingest; verify staging data"
 ```
 
 When a manager asks for project health, run:
 
 ```powershell
-git_pm.py project-status --repo . --project-id PROJ1
+git_pm.py project-status --repo . --project-id PROJ-MNQRV
 git_pm.py review-queue --repo .
 git_pm.py blocked-tasks --repo .
 git_pm.py stale-work --repo .
@@ -89,7 +89,7 @@ When a PM wants a team-facing update on what has changed, run:
 ```powershell
 git_pm.py commit-summary --repo . --since "1 week ago"
 # Or save it as a doc in the hub
-git_pm.py commit-summary --repo . --since "1 week ago" --project-id PROJ1 --create-doc
+git_pm.py commit-summary --repo . --since "1 week ago" --project-id PROJ-MNQRV --create-doc
 ```
 
 When a team wants automated PR/MR triage, run a dry-run first then post when ready:
@@ -123,16 +123,16 @@ Use `scripts/git_pm.py` for deterministic work before editing canonical Project 
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" audit-docs --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" compile --repo ".\project-hub"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" my-tasks --repo ".\project-hub" --user "Bao"
-& "<python>" "...\git-based-project-management\scripts\git_pm.py" project-status --repo ".\project-hub" --project-id PROJ1
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" project-status --repo ".\project-hub" --project-id PROJ-MNQRV
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" review-queue --repo ".\project-hub"
-& "<python>" "...\git-based-project-management\scripts\git_pm.py" create-milestone --repo ".\project-hub" --project-id PROJ1 --title "FTUE Vertical Slice" --owner "Maya"
-& "<python>" "...\git-based-project-management\scripts\git_pm.py" propose-feature --repo ".\project-hub" --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya"
-& "<python>" "...\git-based-project-management\scripts\git_pm.py" register-repo --repo ".\project-hub" --project-id PROJ1 --name game-client --provider gitlab --url "https://gitlab.garena.com/group/game-client" --default-branch main --role "client/gameplay"
-& "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK3 --actor "Paul" --target-repo game-client --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "FTUE tracking implementation ready for review."
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" create-milestone --repo ".\project-hub" --project-id PROJ-MNQRV --title "FTUE Vertical Slice" --owner "Maya"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" propose-feature --repo ".\project-hub" --project-id PROJ-MNQRV --title "FTUE Data Tracking" --owner "Maya"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" register-repo --repo ".\project-hub" --project-id PROJ-MNQRV --name game-client --provider gitlab --url "https://gitlab.garena.com/group/game-client" --default-branch main --role "client/gameplay"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK-20260514-BAJQP --actor "Paul" --target-repo game-client --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "FTUE tracking implementation ready for review."
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" commit-summary --repo ".\project-hub" --since "1 week ago"
-& "<python>" "...\git-based-project-management\scripts\git_pm.py" commit-summary --repo ".\project-hub" --count 20 --project-id PROJ1 --create-doc
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" commit-summary --repo ".\project-hub" --count 20 --project-id PROJ-MNQRV --create-doc
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" review-mrs --repo ".\project-hub" --dry-run
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" review-mrs --repo ".\project-hub" --post --provider github
 ```
@@ -264,26 +264,26 @@ Use task events and attempt/review commands for operational updates:
 Use documents for durable artifacts beyond tasks:
 
 ```powershell
-git_pm.py propose-feature --repo . --project-id PROJ1 --title "FTUE Data Tracking" --owner "Maya"
-git_pm.py create-doc --repo . --project-id PROJ1 --doc-type meeting-notes --title "Sprint Planning 2026-05-11" --owner "Maya"
-git_pm.py create-doc --repo . --project-id PROJ1 --doc-type project-note --title "FTUE Analytics Notes" --owner "Bao"
-git_pm.py create-doc --repo . --project-id PROJ1 --doc-type risk-log --title "Release Risk Log" --owner "Maya"
-git_pm.py create-doc --repo . --project-id PROJ1 --doc-type decision --title "Rename Heroes To Champions" --owner "Maya"
+git_pm.py propose-feature --repo . --project-id PROJ-MNQRV --title "FTUE Data Tracking" --owner "Maya"
+git_pm.py create-doc --repo . --project-id PROJ-MNQRV --doc-type meeting-notes --title "Sprint Planning 2026-05-11" --owner "Maya"
+git_pm.py create-doc --repo . --project-id PROJ-MNQRV --doc-type project-note --title "FTUE Analytics Notes" --owner "Bao"
+git_pm.py create-doc --repo . --project-id PROJ-MNQRV --doc-type risk-log --title "Release Risk Log" --owner "Maya"
+git_pm.py create-doc --repo . --project-id PROJ-MNQRV --doc-type decision --title "Rename Heroes To Champions" --owner "Maya"
 ```
 
 Use controller commands for normal day-to-day updates instead of hand-editing task/event/review YAML or Markdown:
 
 ```powershell
-git_pm.py register-repo --repo . --project-id PROJ1 --name game-client --provider github --url "https://github.com/org/game-client" --default-branch main --role "client/gameplay"
-git_pm.py update-task --repo . --task-id TASK3 --actor "Paul" --status "In Progress" --target-repo "game-client" --user-update "Prototype branch is running locally."
-git_pm.py submit-output --repo . --task-id TASK3 --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for review."
-git_pm.py record-attempt --repo . --task-id TASK3 --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for objective verification."
-git_pm.py record-verification-failed --repo . --task-id TASK3 --reviewer "Maya" --reason "PR link is inaccessible to the reviewer account."
-git_pm.py supersede-output --repo . --task-id TASK3 --actor "Paul" --new-output "https://github.com/org/game-client/pull/43" --reason "Replaced inaccessible PR with the correct branch."
-git_pm.py withdraw-output --repo . --task-id TASK3 --actor "Paul" --reason "Output is obsolete after scope changed."
-git_pm.py cancel-review --repo . --task-id TASK3 --actor "Maya" --reason "Review cancelled because the output was withdrawn."
-git_pm.py review-task --repo . --task-id TASK3 --reviewer "Maya" --decision "approved" --notes "Accepted."
-git_pm.py register-asset --repo . --project-id PROJ1 --title "HUD mockup v2" --asset-type "mockup" --source-url "https://example.com/mockup" --used-by "PROJ1,TASK4" --owner "Fern"
+git_pm.py register-repo --repo . --project-id PROJ-MNQRV --name game-client --provider github --url "https://github.com/org/game-client" --default-branch main --role "client/gameplay"
+git_pm.py update-task --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --status "In Progress" --target-repo "game-client" --user-update "Prototype branch is running locally."
+git_pm.py submit-output --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for review."
+git_pm.py record-attempt --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for objective verification."
+git_pm.py record-verification-failed --repo . --task-id TASK-20260514-BAJQP --reviewer "Maya" --reason "PR link is inaccessible to the reviewer account."
+git_pm.py supersede-output --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --new-output "https://github.com/org/game-client/pull/43" --reason "Replaced inaccessible PR with the correct branch."
+git_pm.py withdraw-output --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --reason "Output is obsolete after scope changed."
+git_pm.py cancel-review --repo . --task-id TASK-20260514-BAJQP --actor "Maya" --reason "Review cancelled because the output was withdrawn."
+git_pm.py review-task --repo . --task-id TASK-20260514-BAJQP --reviewer "Maya" --decision "approved" --notes "Accepted."
+git_pm.py register-asset --repo . --project-id PROJ-MNQRV --title "HUD mockup v2" --asset-type "mockup" --source-url "https://example.com/mockup" --used-by "PROJ-MNQRV,TASK-CQRSV" --owner "Fern"
 ```
 
 New tasks live in folders: `task.yaml`, `notes.md`, `outputs.md`, and `attachments/README.md`. Use the task folder for task-local context and link large artifacts through the asset manifest.
@@ -314,7 +314,7 @@ git_pm.py commit-summary --repo . --count 20
 git_pm.py commit-summary --repo . --since "1 week ago"
 
 # Save as a meeting-notes doc in the hub
-git_pm.py commit-summary --repo . --since "1 week ago" --project-id PROJ1 --create-doc
+git_pm.py commit-summary --repo . --since "1 week ago" --project-id PROJ-MNQRV --create-doc
 
 # Machine-readable JSON for further processing
 git_pm.py commit-summary --repo . --since "1 week ago" --json
@@ -327,7 +327,7 @@ git_pm.py commit-summary --repo . --since "1 week ago" --json
 `review-mrs` fetches all open PRs/MRs from the hub's provider, runs deterministic hub checks against each linked task, and optionally posts a structured review comment. Use it to give submitters immediate feedback without waiting for a human reviewer.
 
 **Deterministic checks performed per PR:**
-- Task ID (`TASK#`) referenced in PR title or body
+- Task ID (e.g. `TASK-20260514-BAJQP`) referenced in PR title or body
 - Task is in `In Review` status
 - Task has an `output` field set (matching the PR URL)
 - `output_commit` is set when a `target_repo` is registered
