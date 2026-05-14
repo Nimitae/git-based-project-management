@@ -2837,6 +2837,428 @@ def cmd_register_asset(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── Commit Summary ────────────────────────────────────────────────────────────
+
+def gather_commit_data(repo: Path, count: int, since: str) -> list[dict]:
+    """Fetch structured commit metadata from git log."""
+    fmt = "%H|%s|%an|%ae|%ai"
+    log_args = ["log", f"--format={fmt}"]
+    if since:
+        log_args.append(f"--since={since}")
+    else:
+        log_args.append(f"-{count}")
+    result = git(log_args, repo)
+    commits: list[dict] = []
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("|", 4)
+        if len(parts) < 4:
+            continue
+        commits.append({"sha": parts[0], "subject": parts[1], "author_name": parts[2], "author_email": parts[3], "date": parts[4] if len(parts) > 4 else ""})
+    return commits
+
+
+def files_changed_in_commit(repo: Path, sha: str) -> list[str]:
+    """Return list of file paths changed in a commit."""
+    result = git(["diff-tree", "--no-commit-id", "-r", "--name-only", sha], repo)
+    return [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+
+
+def map_files_to_hub_entities(files: list[str], registry: dict) -> dict:
+    """Map changed file paths to hub entity buckets."""
+    task_paths = {ref.get("path", ""): tid for tid, ref in registry.get("tasks", {}).items()}
+    doc_paths = {ref.get("path", ""): did for did, ref in registry.get("docs", {}).items()}
+    milestone_paths = {ref.get("path", ""): mid for mid, ref in registry.get("milestones", {}).items()}
+    entities: dict = {"tasks": [], "docs": [], "milestones": [], "policies": [], "website": [], "registry": False, "events": False, "reviews": False, "other": []}
+    for f in files:
+        if f == "registry.yaml":
+            entities["registry"] = True
+        elif f.startswith("events/"):
+            entities["events"] = True
+        elif f.startswith("reviews/"):
+            entities["reviews"] = True
+        elif f.startswith("policies/"):
+            entities["policies"].append(f)
+        elif f.startswith("website/") or f.startswith("assets/website/"):
+            entities["website"].append(f)
+        elif f in task_paths:
+            entities["tasks"].append(task_paths[f])
+        elif f in doc_paths:
+            entities["docs"].append(doc_paths[f])
+        elif f in milestone_paths:
+            entities["milestones"].append(milestone_paths[f])
+        else:
+            # check if file lives inside a task folder
+            matched = False
+            for tp, tid in task_paths.items():
+                if tp and f.startswith(tp.rsplit("/", 1)[0] + "/"):
+                    if tid not in entities["tasks"]:
+                        entities["tasks"].append(tid)
+                    matched = True
+                    break
+            if not matched:
+                entities["other"].append(f)
+    for key in ("tasks", "docs", "milestones", "policies", "website", "other"):
+        entities[key] = list(dict.fromkeys(entities[key]))
+    return entities
+
+
+def build_commit_summary(repo: Path, registry: dict, commits: list[dict]) -> dict:
+    """Build structured summary of commits correlated to hub entities."""
+    all_files: list[str] = []
+    authors: set[str] = set()
+    for commit in commits:
+        authors.add(commit["author_name"] or commit["author_email"])
+        all_files.extend(files_changed_in_commit(repo, commit["sha"]))
+    entities = map_files_to_hub_entities(list(dict.fromkeys(all_files)), registry)
+    task_details = []
+    for tid in entities["tasks"]:
+        ref = registry.get("tasks", {}).get(tid, {})
+        try:
+            task = read_json_subset(safe_repo_path(repo, ref.get("path", "")), {})
+        except GitPMError:
+            task = {}
+        merged = {**ref, **task}
+        task_details.append({"id": tid, "title": merged.get("title", ""), "status": merged.get("status", ""), "assigned_to": merged.get("assigned_to", ""), "reviewer": merged.get("reviewer", "")})
+    doc_details = [{"id": did, "title": registry.get("docs", {}).get(did, {}).get("title", ""), "type": registry.get("docs", {}).get(did, {}).get("doc_type", "")} for did in entities["docs"]]
+    dates = [c["date"] for c in commits if c.get("date")]
+    flags: list[str] = []
+    for td in task_details:
+        if td["status"] == "In Review" and not td.get("reviewer"):
+            flags.append(f"{td['id']} is In Review but has no reviewer assigned - assign one now")
+        if td["status"] == "Blocked":
+            flags.append(f"{td['id']} is Blocked - the team should discuss unblocking")
+    if entities["policies"]:
+        flags.append(f"Policy files changed ({', '.join(entities['policies'])}) - team should review for compliance impact")
+    if entities["registry"]:
+        flags.append("registry.yaml changed - verify task/doc/milestone references are consistent")
+    topics: list[str] = []
+    for td in task_details:
+        if td["status"] == "In Review":
+            topics.append(f"Review ready: {td['id']} - {td['title']} (reviewer: {td['reviewer'] or 'UNASSIGNED'})")
+    for doc in doc_details:
+        if doc["type"] in ("proposal", "feature-proposal"):
+            topics.append(f"Feature proposal updated: {doc['id']} - {doc['title']}")
+    if any(td["status"] == "Blocked" for td in task_details):
+        topics.append("Unblocking discussion needed for blocked tasks (see alignment flags above)")
+    if any(td["status"] in ("Done", "Verified") for td in task_details):
+        topics.append("Completed tasks landed this period - update milestone/roadmap if needed")
+    return {
+        "period": {"from": min(dates) if dates else "", "to": max(dates) if dates else "", "commits": len(commits), "authors": sorted(authors)},
+        "entities": {"tasks": task_details, "docs": doc_details, "policies_changed": entities["policies"], "registry_changed": entities["registry"], "events_changed": entities["events"], "reviews_changed": entities["reviews"], "website_changed": entities["website"], "other_files": entities["other"]},
+        "alignment_flags": flags,
+        "suggested_topics": topics,
+        "commit_subjects": [c["subject"] for c in commits],
+    }
+
+
+def format_commit_summary_markdown(data: dict, hub_name: str) -> str:
+    """Format a PM-style team update from commit summary data."""
+    period = data["period"]
+    entities = data["entities"]
+    date_from = (period.get("from") or "")[:10]
+    date_to = (period.get("to") or "")[:10]
+    period_str = f"{date_from} to {date_to}" if date_from != date_to else date_from
+    authors_str = ", ".join(period["authors"]) if period["authors"] else "unknown"
+    lines = [f"# Commit Summary: {hub_name}", "", f"**Period:** {period_str}  ", f"**Commits:** {period['commits']}  ", f"**Contributors:** {authors_str}", ""]
+    lines += ["## What Changed", ""]
+    if entities["tasks"]:
+        lines.append("**Tasks touched:**")
+        for t in entities["tasks"]:
+            status_tag = f"[{t['status']}]" if t.get("status") else ""
+            lines.append(f"- {t['id']} {status_tag} {t['title']} (owner: {t.get('assigned_to') or 'unassigned'})")
+        lines.append("")
+    if entities["docs"]:
+        lines.append("**Documents updated:**")
+        for d in entities["docs"]:
+            lines.append(f"- {d['id']} [{d.get('type', '')}] {d['title']}")
+        lines.append("")
+    if entities["policies_changed"]:
+        lines.append("**Policies changed:**")
+        for p in entities["policies_changed"]:
+            lines.append(f"- `{p}`")
+        lines.append("")
+    if entities["registry_changed"]:
+        lines.append("- `registry.yaml` updated - verify task/doc references\n")
+    if entities["events_changed"]:
+        lines.append("- Event log updated (task progress recorded)\n")
+    if entities["reviews_changed"]:
+        lines.append("- Review log updated\n")
+    if entities["website_changed"]:
+        lines.append(f"- Website files changed: {', '.join(entities['website_changed'])}\n")
+    if not any([entities["tasks"], entities["docs"], entities["policies_changed"], entities["registry_changed"]]):
+        lines.append("No hub entity files changed in this period.\n")
+    if data["alignment_flags"]:
+        lines += ["## Needs Team Alignment", ""]
+        for flag in data["alignment_flags"]:
+            lines.append(f"- {flag}")
+        lines.append("")
+    if data["suggested_topics"]:
+        lines += ["## Suggested Discussion Topics", ""]
+        for topic in data["suggested_topics"]:
+            lines.append(f"- {topic}")
+        lines.append("")
+    lines += ["## Commit Log", ""]
+    for subj in data["commit_subjects"]:
+        lines.append(f"- {subj}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def cmd_commit_summary(args: argparse.Namespace) -> int:
+    """Generate a PM-style team update summarising recent commits correlated to hub entities."""
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    hub_name = registry.get("hub", {}).get("name", repo.name)
+    commits = gather_commit_data(repo, args.count, args.since)
+    if not commits:
+        print("No commits found in the specified range.", file=sys.stderr)
+        return 1
+    summary = build_commit_summary(repo, registry, commits)
+    if args.json:
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        return 0
+    report = format_commit_summary_markdown(summary, hub_name)
+    if args.create_doc:
+        project_id = args.project_id or next(iter(registry.get("projects", {})), "")
+        if not project_id:
+            raise GitPMError("no project found; use --project-id")
+        project = registry.get("projects", {}).get(project_id)
+        if not project:
+            raise GitPMError(f"project {project_id} not found")
+        doc_id = allocate_id(registry, "doc")
+        date_label = ((summary["period"].get("to") or now_iso())[:10])
+        title = f"Commit Summary {date_label}"
+        rel, _, ref = make_doc(doc_id, project, "meeting-notes", title, "agent")
+        registry.setdefault("docs", {})[doc_id] = ref
+        write_text(repo / rel, report)
+        save_registry(repo, registry)
+        print(f"Saved as {doc_id} at {rel}")
+    else:
+        print(report)
+    return 0
+
+
+# ── MR / PR Auto-Review ───────────────────────────────────────────────────────
+
+_TASK_ID_RE = re.compile(r"\bTASK\d+\b")
+
+
+def extract_task_ids_from_text(text: str) -> list[str]:
+    return list(dict.fromkeys(_TASK_ID_RE.findall(text or "")))
+
+
+def load_output_requirements(repo: Path) -> list[str]:
+    path = safe_repo_path(repo, "policies/output-requirements.yaml")
+    if not path.exists():
+        return []
+    data = read_json_subset(path, {})
+    reqs = data.get("requirements", [])
+    if isinstance(reqs, list):
+        return [r.get("description", str(r)) if isinstance(r, dict) else str(r) for r in reqs]
+    return []
+
+
+def check_pr_against_task(task_id: str, task: dict, pr: dict) -> dict:
+    """Run deterministic hub checks for a PR against a linked task. Returns {passed, warnings, failed}."""
+    passed: list[str] = []
+    warnings: list[str] = []
+    failed: list[str] = []
+    pr_url = pr.get("url", "")
+    pr_body = pr.get("body") or ""
+    task_ids_in_pr = extract_task_ids_from_text(pr.get("title", "") + " " + pr_body)
+    passed.append("Task found in hub registry")
+    if task_id in task_ids_in_pr:
+        passed.append(f"{task_id} referenced in PR title or body")
+    else:
+        warnings.append(f"{task_id} not mentioned in PR title or body - add it for traceability")
+    status = task.get("status", "")
+    if status == "In Review":
+        passed.append("Task status is 'In Review'")
+    elif status in HISTORICAL_TASK_STATUSES:
+        warnings.append(f"Task is already '{status}' - this PR may be a follow-up or duplicate")
+    else:
+        failed.append(f"Task is '{status}', not 'In Review' - run git_pm.py record-attempt to move it first")
+    task_output = task.get("output", "")
+    if task_output:
+        if pr_url and (pr_url in task_output or task_output in pr_url):
+            passed.append("Task output field matches this PR URL")
+        else:
+            warnings.append("Task output field is set but does not match this PR URL - verify the link is correct")
+    else:
+        failed.append("Task has no output field - run: git_pm.py record-attempt --task-id ... --output <PR URL>")
+    if task.get("target_repo"):
+        if task.get("output_commit"):
+            passed.append(f"output_commit is set ({str(task['output_commit'])[:12]})")
+        else:
+            failed.append("output_commit is missing - add via: git_pm.py record-attempt --output-commit <SHA>")
+    ac = task.get("acceptance_criteria") or []
+    if isinstance(ac, list) and ac:
+        passed.append(f"Task has {len(ac)} acceptance criteria defined")
+    else:
+        warnings.append("Task has no acceptance criteria - add them to task.yaml for objective review")
+    reviewer = task.get("reviewer", "")
+    if reviewer:
+        passed.append(f"Reviewer assigned: {reviewer}")
+    else:
+        warnings.append("No reviewer assigned - run: git_pm.py update-task --task-id ... --reviewer <email>")
+    if len(pr_body.strip()) >= 30:
+        passed.append("PR has a substantive description")
+    else:
+        warnings.append("PR description is very short - add context about what changed and why")
+    return {"passed": passed, "warnings": warnings, "failed": failed}
+
+
+def format_mr_review_body(task_id: str, task: dict, checks: dict, output_requirements: list[str]) -> str:
+    """Format a review comment for posting to the PR/MR."""
+    title = task.get("title", task_id)
+    status = task.get("status", "Unknown")
+    ac = task.get("acceptance_criteria") or []
+    has_failures = bool(checks["failed"])
+    decision = "CHANGES REQUESTED" if has_failures else "APPROVED"
+    lines = ["## Automated Hub Review", "", f"**Linked Task:** {task_id} - {title} [{status}]", "", "### Checklist", ""]
+    for item in checks["passed"]:
+        lines.append(f"- [x] {item}")
+    for item in checks["warnings"]:
+        lines.append(f"- [~] {item}")
+    for item in checks["failed"]:
+        lines.append(f"- [ ] {item}")
+    lines.append("")
+    if isinstance(ac, list) and ac:
+        lines += ["### Acceptance Criteria", ""]
+        for criterion in ac:
+            lines.append(f"- {criterion}")
+        lines.append("")
+    if output_requirements:
+        lines += ["### Output Policy Checklist", "", "*From `policies/output-requirements.yaml`:*", ""]
+        for req in output_requirements[:6]:
+            lines.append(f"- {req}")
+        lines.append("")
+    lines += [f"### Decision: {decision}", ""]
+    if has_failures:
+        lines.append("Items marked `[ ]` must be resolved before hub approval. Re-push and the next review cycle will re-check.")
+    else:
+        if checks["warnings"]:
+            lines.append("All required checks passed. Items marked `[~]` are recommended improvements.")
+            lines.append("")
+            lines.append("**Approved** - the assigned reviewer may still request further changes.")
+        else:
+            lines.append("All hub checks passed. **Approved.**")
+    lines += ["", "---", "*Posted by `git_pm.py review-mrs`*"]
+    return "\n".join(lines)
+
+
+def fetch_open_prs_github(api_url: str, token: str, repo_name: str) -> list[dict]:
+    encoded = "/".join(parse.quote(p, safe="") for p in repo_name.split("/"))
+    raw = github_request(api_url, token, "GET", f"/repos/{encoded}/pulls?state=open&per_page=50")
+    return [{"number": pr["number"], "title": pr.get("title", ""), "body": pr.get("body") or "", "url": pr.get("html_url", ""), "author": pr.get("user", {}).get("login", ""), "branch": pr.get("head", {}).get("ref", "")} for pr in (raw if isinstance(raw, list) else [])]
+
+
+def fetch_open_prs_gitlab(gitlab_url: str, token: str, project_path: str) -> list[dict]:
+    encoded = parse.quote(project_path, safe="")
+    raw = gitlab_request(gitlab_url, token, "GET", f"/api/v4/projects/{encoded}/merge_requests?state=opened&per_page=50")
+    return [{"number": mr["iid"], "title": mr.get("title", ""), "body": mr.get("description") or "", "url": mr.get("web_url", ""), "author": mr.get("author", {}).get("name", ""), "branch": mr.get("source_branch", "")} for mr in (raw if isinstance(raw, list) else [])]
+
+
+def post_review_github(api_url: str, token: str, repo_name: str, pr_number: int, body: str, has_failures: bool) -> None:
+    encoded = "/".join(parse.quote(p, safe="") for p in repo_name.split("/"))
+    event = "REQUEST_CHANGES" if has_failures else "APPROVE"
+    github_request(api_url, token, "POST", f"/repos/{encoded}/pulls/{pr_number}/reviews", {"body": body, "event": event})
+
+
+def post_review_gitlab(gitlab_url: str, token: str, project_path: str, mr_iid: int, body: str, has_failures: bool) -> None:
+    encoded = parse.quote(project_path, safe="")
+    gitlab_request(gitlab_url, token, "POST", f"/api/v4/projects/{encoded}/merge_requests/{mr_iid}/notes", {"body": body})
+    if not has_failures:
+        try:
+            gitlab_request(gitlab_url, token, "POST", f"/api/v4/projects/{encoded}/merge_requests/{mr_iid}/approve", {})
+        except GitPMError:
+            pass  # approval may require project-level permissions
+
+
+def cmd_review_mrs(args: argparse.Namespace) -> int:
+    """Fetch open PRs/MRs, run deterministic hub checks, and optionally post review comments."""
+    repo = repo_arg(args.repo)
+    _do_pull(repo, args)
+    registry = load_registry(repo)
+    output_requirements = load_output_requirements(repo)
+    provider = (args.provider or os.environ.get("GPM_PROVIDER") or registry.get("provider", "github")).lower()
+    api_url = repo_name = gitlab_url = project_path = token = ""
+    prs: list[dict] = []
+    if provider == "github":
+        api_url = args.github_api_url or os.environ.get("GPM_GITHUB_API_URL") or registry.get("github", {}).get("api_url", "https://api.github.com")
+        repo_name = args.github_repo or os.environ.get("GPM_GITHUB_REPO") or registry.get("github", {}).get("repo", "")
+        token = args.github_token or os.environ.get("GPM_GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")
+        if not repo_name or not token:
+            raise GitPMError("review-mrs (github) requires --github-repo and --github-token or GPM_GITHUB_REPO / GPM_GITHUB_TOKEN")
+        prs = fetch_open_prs_github(api_url, token, repo_name)
+    elif provider == "gitlab":
+        gitlab_url = args.gitlab_url or os.environ.get("GPM_GITLAB_URL") or registry.get("gitlab", {}).get("url", "")
+        project_path = args.gitlab_project or os.environ.get("GPM_GITLAB_PROJECT") or registry.get("gitlab", {}).get("project_path", "")
+        token = args.gitlab_token or os.environ.get("GPM_GITLAB_TOKEN", "")
+        if not gitlab_url or not project_path or not token:
+            raise GitPMError("review-mrs (gitlab) requires --gitlab-url, --gitlab-project, and --gitlab-token")
+        prs = fetch_open_prs_gitlab(gitlab_url, token, project_path)
+    else:
+        raise GitPMError(f"Unknown provider '{provider}'; use --provider github or gitlab")
+    limit = args.limit or len(prs)
+    prs = prs[:limit]
+    if not prs:
+        print("No open PRs/MRs found.")
+        return 0
+    results: list[dict] = []
+    for pr in prs:
+        task_ids = extract_task_ids_from_text(pr["title"] + " " + pr["body"])
+        if not task_ids:
+            results.append({"pr": pr["number"], "title": pr["title"], "url": pr["url"], "decision": "SKIPPED", "reason": "No TASK# found in PR title or body"})
+            if not args.json:
+                print(f"PR {pr['number']} SKIPPED (no task ID): {pr['title']}")
+            continue
+        primary_id = task_ids[0]
+        ref = registry.get("tasks", {}).get(primary_id)
+        if not ref:
+            results.append({"pr": pr["number"], "title": pr["title"], "url": pr["url"], "task_ids": task_ids, "decision": "SKIPPED", "reason": f"{primary_id} not found in hub registry"})
+            if not args.json:
+                print(f"PR {pr['number']} SKIPPED ({primary_id} not in registry): {pr['title']}")
+            continue
+        try:
+            task = read_json_subset(safe_repo_path(repo, ref.get("path", "")), {})
+        except GitPMError:
+            task = {}
+        task = {**ref, **task}
+        checks = check_pr_against_task(primary_id, task, pr)
+        has_failures = bool(checks["failed"])
+        decision = "CHANGES_REQUESTED" if has_failures else "APPROVED"
+        comment = format_mr_review_body(primary_id, task, checks, output_requirements)
+        posted = False
+        if args.post and not args.dry_run:
+            try:
+                if provider == "github":
+                    post_review_github(api_url, token, repo_name, pr["number"], comment, has_failures)
+                else:
+                    post_review_gitlab(gitlab_url, token, project_path, pr["number"], comment, has_failures)
+                posted = True
+            except GitPMError as exc:
+                print(f"WARNING: could not post review for PR {pr['number']}: {exc}", file=sys.stderr)
+        row = {"pr": pr["number"], "title": pr["title"], "url": pr["url"], "task_ids": task_ids, "primary_task": primary_id, "decision": decision, "passed": len(checks["passed"]), "warnings": len(checks["warnings"]), "failures": len(checks["failed"]), "posted": posted}
+        if args.dry_run or not args.post:
+            row["comment_preview"] = comment
+        results.append(row)
+        if not args.json:
+            posted_tag = " [POSTED]" if posted else " [DRY-RUN]" if not args.post else ""
+            print(f"PR {pr['number']} {decision}{posted_tag}: {pr['title']}")
+            print(f"  checks: {len(checks['passed'])} passed / {len(checks['warnings'])} warnings / {len(checks['failed'])} failures")
+            if args.dry_run or not args.post:
+                print("  --- Comment preview (first 25 lines) ---")
+                for line in comment.splitlines()[:25]:
+                    print(f"  {line}")
+                if len(comment.splitlines()) > 25:
+                    print("  [... truncated - use --json for full output ...]")
+    if args.json:
+        print(json.dumps({"provider": provider, "reviewed": len(results), "results": results}, indent=2, ensure_ascii=False))
+    return 0
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     repo = repo_arg(args.repo)
     if registry_path(repo).exists() and not args.force:
@@ -3663,6 +4085,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--git-init", action="store_true")
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_demo)
+
+    p = sub.add_parser("commit-summary")
+    add_common_repo(p)
+    p.add_argument("--count", type=int, default=20, help="Max commits to summarise (ignored when --since is set)")
+    p.add_argument("--since", default="", help="Show commits since date or duration, e.g. '1 week ago' or '2026-05-01'")
+    p.add_argument("--project-id", default="", help="Project to attach doc to (required with --create-doc)")
+    p.add_argument("--create-doc", action="store_true", help="Save the summary as a meeting-notes doc in the hub")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_commit_summary)
+
+    p = sub.add_parser("review-mrs")
+    add_common_repo(p)
+    p.add_argument("--provider", default="", help="github or gitlab (default: read from registry)")
+    p.add_argument("--limit", type=int, default=0, help="Max number of open PRs/MRs to review (0 = all)")
+    p.add_argument("--post", action="store_true", help="Post review comments to the provider (default: dry-run preview only)")
+    p.add_argument("--dry-run", action="store_true", help="Print full comment previews without posting (implied when --post is absent)")
+    p.add_argument("--github-api-url", default=os.environ.get("GPM_GITHUB_API_URL", "https://api.github.com"))
+    p.add_argument("--github-repo", default=os.environ.get("GPM_GITHUB_REPO", ""))
+    p.add_argument("--github-token", default=os.environ.get("GPM_GITHUB_TOKEN", ""))
+    p.add_argument("--gitlab-url", default=os.environ.get("GPM_GITLAB_URL", ""))
+    p.add_argument("--gitlab-project", default=os.environ.get("GPM_GITLAB_PROJECT", ""))
+    p.add_argument("--gitlab-token", default=os.environ.get("GPM_GITLAB_TOKEN", ""))
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_review_mrs)
 
     p = sub.add_parser("propose")
     add_common_repo(p)
