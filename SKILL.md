@@ -84,6 +84,24 @@ git_pm.py stale-work --repo .
 
 When a reviewer asks what needs review, start with `review-queue`, then inspect each task output before approval. For code tasks, read the task `target_repo`, find that repo in the project `repos` list, and verify the `output_commit` exists in that implementation repo before approving.
 
+When a PM wants a team-facing update on what has changed, run:
+
+```powershell
+git_pm.py commit-summary --repo . --since "1 week ago"
+# Or save it as a doc in the hub
+git_pm.py commit-summary --repo . --since "1 week ago" --project-id PROJ1 --create-doc
+```
+
+When a team wants automated PR/MR triage, run a dry-run first then post when ready:
+
+```powershell
+# Preview what the reviewer would say (no API call)
+git_pm.py review-mrs --repo . --dry-run
+
+# Post review comments to the provider for all open PRs/MRs
+git_pm.py review-mrs --repo . --post
+```
+
 ## Canonical User Prompts
 
 - "What should I work on today?" Pull latest Git, run `my-tasks`, read assigned task folders, summarize active work, blockers, review responsibilities, and next actions.
@@ -113,6 +131,10 @@ Use `scripts/git_pm.py` for deterministic work before editing canonical Project 
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK3 --actor "Paul" --target-repo game-client --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "FTUE tracking implementation ready for review."
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" commit-summary --repo ".\project-hub" --since "1 week ago"
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" commit-summary --repo ".\project-hub" --count 20 --project-id PROJ1 --create-doc
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" review-mrs --repo ".\project-hub" --dry-run
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" review-mrs --repo ".\project-hub" --post --provider github
 ```
 
 Use the copied Project Hub website runtime for the deployable human UI. Project Hub initialization copies the bundled web template into the initialized hub under `website/`, writes local launcher scripts, and initializes the launch environment from that hub's registry/provider settings:
@@ -261,6 +283,71 @@ If a PR/MR marks a task `Done` but the output cannot be objectively verified, re
 Run `audit-docs` regularly, especially before planning reviews or release reviews. It checks validation, expected master files, live docs, terminology drift, and blocked task details. Configure terminology checks in `policies/terminology.yaml`; use narrow `allowed_occurrences` for exact historical references that should remain unchanged.
 
 Treat live docs and historical records differently. Update live docs when terminology changes, such as renaming `heroes` to `champions`. Do not rewrite completed task records, finalized meeting notes, archived reports, append-only events, or reviews just to match new terminology. Instead, create a `decision` or `project-note` that explains the change.
+
+## Commit Summary (PM Team Update)
+
+`commit-summary` reads git commits, correlates them to hub entities (tasks, docs, policies, registry), and produces a PM-style team update. Use it whenever you need to brief the team on what landed, what needs attention, or what to discuss next.
+
+**What the output includes:**
+- **Period and contributors** — date range, commit count, authors
+- **What changed** — tasks touched (with status), docs updated, policies or registry changed
+- **Needs team alignment** — tasks in review without a reviewer, blocked tasks, policy changes with compliance implications
+- **Suggested discussion topics** — review-ready tasks, feature proposals, completed milestones
+- **Commit log** — raw subjects for reference
+
+**Options:**
+```powershell
+# Last 20 commits
+git_pm.py commit-summary --repo . --count 20
+
+# Last week
+git_pm.py commit-summary --repo . --since "1 week ago"
+
+# Save as a meeting-notes doc in the hub
+git_pm.py commit-summary --repo . --since "1 week ago" --project-id PROJ1 --create-doc
+
+# Machine-readable JSON for further processing
+git_pm.py commit-summary --repo . --since "1 week ago" --json
+```
+
+**Schedule with the schedule skill:** set up a weekly agent that runs `commit-summary --create-doc` and posts the result to the team channel.
+
+## Automated MR / PR Review
+
+`review-mrs` fetches all open PRs/MRs from the hub's provider, runs deterministic hub checks against each linked task, and optionally posts a structured review comment. Use it to give submitters immediate feedback without waiting for a human reviewer.
+
+**Deterministic checks performed per PR:**
+- Task ID (`TASK#`) referenced in PR title or body
+- Task is in `In Review` status
+- Task has an `output` field set (matching the PR URL)
+- `output_commit` is set when a `target_repo` is registered
+- Task has `acceptance_criteria` defined
+- A `reviewer` is assigned to the task
+- PR has a substantive description (> 30 characters)
+
+**Failures** (items marked `[ ]`) block approval; **warnings** (items marked `[~]`) are shown but do not block. The comment also lists the task's acceptance criteria and the hub's output policy checklist from `policies/output-requirements.yaml`.
+
+**Options:**
+```powershell
+# Preview what the review comment would say (no API call)
+git_pm.py review-mrs --repo . --dry-run
+
+# Post review comments to all open PRs/MRs
+git_pm.py review-mrs --repo . --post
+
+# Limit to 5 PRs and use explicit credentials
+git_pm.py review-mrs --repo . --post --limit 5 --github-repo owner/hub --github-token $env:GH_TOKEN
+
+# GitLab
+git_pm.py review-mrs --repo . --post --provider gitlab --gitlab-url https://gitlab.example.com --gitlab-project group/hub --gitlab-token $env:GITLAB_TOKEN
+
+# JSON output for scripting
+git_pm.py review-mrs --repo . --json
+```
+
+**Credentials:** provider tokens are read from `--github-token` / `--gitlab-token`, or from `GPM_GITHUB_TOKEN` / `GPM_GITLAB_TOKEN` environment variables, or from the registry. Never commit tokens.
+
+**Schedule with the schedule skill:** run `review-mrs --post` on a cron (e.g. every 6 hours) so submitters get automated feedback the same day they open a PR. Combine with `commit-summary --create-doc` in the same scheduled agent for a fully automated PM loop.
 
 ## References
 
