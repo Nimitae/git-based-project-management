@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import random
 import re
+import string
 import shutil
 import subprocess
 import sys
@@ -427,35 +428,40 @@ def markdown_doc(frontmatter: dict, title: str, body: str) -> str:
     return f"---\n{fm}\n---\n\n# {title}\n\n{body.strip()}\n"
 
 
-# Consonants + unambiguous digits — no vowels (avoids accidental words) and no 0/1/I/O lookalikes.
-_ID_ALPHABET = "BCDFGHJKLMNPQRSTVWXYZ23456789"
+# Kinds that include a YYYYMMDD date segment for chronological ordering.
+# Structural/reference entities (projects, assets) stay short and dateless.
+_DATED_ID_KINDS = {"task", "doc", "event", "review", "milestone"}
 
 
 def random_id(length: int = 5) -> str:
-    """Return a random string of `length` characters from _ID_ALPHABET."""
-    return "".join(random.choices(_ID_ALPHABET, k=length))
+    """Return a random uppercase string of `length` characters (A-Z)."""
+    return "".join(random.choices(string.ascii_uppercase, k=length))
 
 
 def allocate_id(registry: dict, kind: str) -> str:
     """Allocate a unique random ID for a hub entity.
 
-    Tasks include a date segment for light chronological ordering:
-      TASK-20260514-BAJQP
-    All other entity types use the shorter form:
-      PROJ-MNQRV  DOC-W9CX2  MILESTONE-FNPND  etc.
+    Date-stamped kinds (task, doc, event, review, milestone):
+      TASK-20260514-ABCDE   DOC-20260514-ABCDE
+    Structural kinds (project, asset):
+      PROJ-ABCDE   ASSET-ABCDE
 
-    Random IDs prevent merge conflicts when multiple branches each create
-    new entities simultaneously.  next_ids is intentionally not used.
+    Starts with a 5-char slug and grows by one character on each collision
+    so uniqueness is guaranteed without a fixed retry cap.
+    next_ids is intentionally not used — no shared mutable counter.
     """
     prefix = ID_PREFIX[kind]
     section = "docs" if kind == "doc" else f"{kind}s"
     existing = set(registry.get(section, {}).keys())
-    date_seg = dt.date.today().strftime("%Y%m%d") if kind == "task" else ""
-    for _ in range(200):
-        candidate = f"{prefix}-{date_seg}-{random_id()}" if date_seg else f"{prefix}-{random_id()}"
+    dated = kind in _DATED_ID_KINDS
+    date_seg = dt.date.today().strftime("%Y%m%d") if dated else ""
+    length = 5
+    while True:
+        slug = random_id(length)
+        candidate = f"{prefix}-{date_seg}-{slug}" if dated else f"{prefix}-{slug}"
         if candidate not in existing:
             return candidate
-    raise GitPMError(f"could not allocate a unique {kind} ID after 200 attempts")
+        length += 1  # grow slug on collision to guarantee eventual uniqueness
 
 
 def project_folder(project_id: str, name: str) -> str:
@@ -805,7 +811,7 @@ def ensure_base_registry(name: str, owner: str, provider: str, github_repo: str,
     # conflicts when multiple branches each create entities simultaneously.
     proj_id = f"PROJ-{random_id()}"
     task_id = f"TASK-{dt.date.today().strftime('%Y%m%d')}-{random_id()}"
-    doc_id  = f"DOC-{random_id()}"
+    doc_id  = f"DOC-{dt.date.today().strftime('%Y%m%d')}-{random_id()}"
     project = make_project_record(proj_id, name, owner, "game", "Active")
     task_path, task, task_ref = make_task(task_id, proj_id, name, "Confirm collaboration setup", owner, "PM", "Setup Confirmation")
     doc_path, _doc_text, doc_ref = make_doc(doc_id, project, "proposal", "Kickoff Proposal", owner)
@@ -1543,18 +1549,21 @@ def validate_repo(repo: Path) -> list[dict]:
     for index, person in enumerate(registry.get("people", []) or []):
         if not email_from_actor(person.get("email", "")):
             issues.append(issue("warn", "PEOPLE_EMAIL_MISSING", f"people[{index}] {person.get('name', 'unnamed')} should include a staff email", "registry.yaml"))
-    # Accept both legacy sequential IDs (e.g. TASK3) and new random IDs (e.g. TASK-BAJQP).
-    _RANDOM_SUFFIX_RE = re.compile(rf"[{re.escape(_ID_ALPHABET)}]{{5}}")
+    # Accept legacy sequential IDs (e.g. TASK3), structural random IDs (PROJ-ABCDE),
+    # and date-stamped random IDs (TASK-20260514-ABCDE).  Slug length is 5+ chars
+    # because allocate_id() grows the slug by one on each collision.
+    _DATED_KINDS_SET = {"task", "doc", "milestone"}  # event/review not in registry sections
     for kind, section in [("project", "projects"), ("milestone", "milestones"), ("task", "tasks"), ("doc", "docs")]:
         prefix = ID_PREFIX[kind]
         records = registry.get(section, {})
         for entity_id, row in records.items():
-            legacy_ok  = re.fullmatch(rf"{re.escape(prefix)}\d+", entity_id)
-            random_ok  = re.fullmatch(rf"{re.escape(prefix)}-[{re.escape(_ID_ALPHABET)}]{{5}}", entity_id)
-            # Tasks also accept the date-stamped format: TASK-20260514-XXXXX
-            dated_ok   = (kind == "task" and re.fullmatch(rf"TASK-\d{{8}}-[{re.escape(_ID_ALPHABET)}]{{5}}", entity_id))
-            if not (legacy_ok or random_ok or dated_ok):
-                fmt_hint = f"{prefix}-YYYYMMDD-XXXXX or {prefix}-XXXXX" if kind == "task" else f"{prefix}-XXXXX"
+            legacy_ok     = re.fullmatch(rf"{re.escape(prefix)}\d+", entity_id)
+            structural_ok = re.fullmatch(rf"{re.escape(prefix)}-[A-Z]{{5,}}", entity_id)
+            dated_ok      = (kind in _DATED_KINDS_SET and
+                             re.fullmatch(rf"{re.escape(prefix)}-\d{{8}}-[A-Z]{{5,}}", entity_id))
+            if not (legacy_ok or structural_ok or dated_ok):
+                fmt_hint = (f"{prefix}-YYYYMMDD-ABCDE or {prefix}-ABCDE"
+                            if kind in _DATED_KINDS_SET else f"{prefix}-ABCDE")
                 issues.append(issue("error", "ID_FORMAT", f"{entity_id} should match {fmt_hint} or legacy {prefix}#", "registry.yaml"))
             rel = row.get("path") or row.get("readme")
             if rel and not safe_repo_path(repo, rel).exists():
@@ -1676,9 +1685,9 @@ def validate_repo(repo: Path) -> list[dict]:
             issues.append(issue("warn", "REVIEWER_STAFF_EMAIL", f"{review.get('id') or review.get('task_id') or 'review'} reviewer should be a staff email or a person with email in registry.people", "reviews/task-reviews.jsonl"))
     for asset_id, asset in registry.get("assets", {}).items():
         _asset_legacy = re.fullmatch(r"ASSET\d+", asset_id)
-        _asset_random = re.fullmatch(rf"ASSET-[{re.escape(_ID_ALPHABET)}]{{5}}", asset_id)
+        _asset_random = re.fullmatch(r"ASSET-[A-Z]{5,}", asset_id)
         if not (_asset_legacy or _asset_random):
-            issues.append(issue("error", "ASSET_ID_FORMAT", f"{asset_id} should match ASSET-XXXXX or legacy ASSET#", "registry.yaml"))
+            issues.append(issue("error", "ASSET_ID_FORMAT", f"{asset_id} should match ASSET-ABCDE or legacy ASSET#", "registry.yaml"))
         if not asset.get("path") and not asset.get("source_url"):
             issues.append(issue("warn", "ASSET_LINK_MISSING", f"{asset_id} has no path or source_url", "registry.yaml"))
     for rel in [
@@ -3068,9 +3077,11 @@ def cmd_commit_summary(args: argparse.Namespace) -> int:
 
 # ── MR / PR Auto-Review ───────────────────────────────────────────────────────
 
-# Matches legacy sequential IDs (TASK3), date-stamped IDs (TASK-20260514-BAJQP),
-# and the earlier no-date random IDs (TASK-XXXXX) for backward compatibility.
-_TASK_ID_RE = re.compile(rf"\bTASK(?:-\d{{8}}-[{re.escape(_ID_ALPHABET)}]{{5}}|-[{re.escape(_ID_ALPHABET)}]{{5}}|\d+)\b")
+# Matches all three valid task ID formats (5+ char slug for collision-grown IDs):
+#   TASK-20260514-ABCDE   (date-stamped, new)
+#   TASK-ABCDE            (structural/no-date, backward compat)
+#   TASK3                 (legacy sequential, backward compat)
+_TASK_ID_RE = re.compile(r"\bTASK(?:-\d{8}-[A-Z]{5,}|-[A-Z]{5,}|\d+)\b")
 
 
 def extract_task_ids_from_text(text: str) -> list[str]:
