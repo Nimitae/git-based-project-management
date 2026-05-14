@@ -128,7 +128,7 @@ Use `scripts/git_pm.py` for deterministic work before editing canonical Project 
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" create-milestone --repo ".\project-hub" --project-id PROJ-MNQRV --title "FTUE Vertical Slice" --owner "Maya"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" propose-feature --repo ".\project-hub" --project-id PROJ-MNQRV --title "FTUE Data Tracking" --owner "Maya"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" register-repo --repo ".\project-hub" --project-id PROJ-MNQRV --name game-client --provider gitlab --url "https://gitlab.garena.com/group/game-client" --default-branch main --role "client/gameplay"
-& "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK-BAJQP --actor "Paul" --target-repo game-client --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "FTUE tracking implementation ready for review."
+& "<python>" "...\git-based-project-management\scripts\git_pm.py" record-attempt --repo ".\project-hub" --task-id TASK-20260514-BAJQP --actor "Paul" --target-repo game-client --output "https://gitlab.garena.com/group/game/-/merge_requests/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "FTUE tracking implementation ready for review."
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" website --repo ".\project-hub" --port 8787
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" demo --repo ".\demo-game-hub" --name "Demo Game Hub" --owner "Maya"
 & "<python>" "...\git-based-project-management\scripts\git_pm.py" commit-summary --repo ".\project-hub" --since "1 week ago"
@@ -265,14 +265,14 @@ Use controller commands for normal day-to-day updates instead of hand-editing ta
 
 ```powershell
 git_pm.py register-repo --repo . --project-id PROJ-MNQRV --name game-client --provider github --url "https://github.com/org/game-client" --default-branch main --role "client/gameplay"
-git_pm.py update-task --repo . --task-id TASK-BAJQP --actor "Paul" --status "In Progress" --target-repo "game-client" --user-update "Prototype branch is running locally."
-git_pm.py submit-output --repo . --task-id TASK-BAJQP --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for review."
-git_pm.py record-attempt --repo . --task-id TASK-BAJQP --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for objective verification."
-git_pm.py record-verification-failed --repo . --task-id TASK-BAJQP --reviewer "Maya" --reason "PR link is inaccessible to the reviewer account."
-git_pm.py supersede-output --repo . --task-id TASK-BAJQP --actor "Paul" --new-output "https://github.com/org/game-client/pull/43" --reason "Replaced inaccessible PR with the correct branch."
-git_pm.py withdraw-output --repo . --task-id TASK-BAJQP --actor "Paul" --reason "Output is obsolete after scope changed."
-git_pm.py cancel-review --repo . --task-id TASK-BAJQP --actor "Maya" --reason "Review cancelled because the output was withdrawn."
-git_pm.py review-task --repo . --task-id TASK-BAJQP --reviewer "Maya" --decision "approved" --notes "Accepted."
+git_pm.py update-task --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --status "In Progress" --target-repo "game-client" --user-update "Prototype branch is running locally."
+git_pm.py submit-output --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for review."
+git_pm.py record-attempt --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --target-repo "game-client" --output "https://github.com/org/game-client/pull/42" --output-commit "0123456789abcdef0123456789abcdef01234567" --message "Ready for objective verification."
+git_pm.py record-verification-failed --repo . --task-id TASK-20260514-BAJQP --reviewer "Maya" --reason "PR link is inaccessible to the reviewer account."
+git_pm.py supersede-output --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --new-output "https://github.com/org/game-client/pull/43" --reason "Replaced inaccessible PR with the correct branch."
+git_pm.py withdraw-output --repo . --task-id TASK-20260514-BAJQP --actor "Paul" --reason "Output is obsolete after scope changed."
+git_pm.py cancel-review --repo . --task-id TASK-20260514-BAJQP --actor "Maya" --reason "Review cancelled because the output was withdrawn."
+git_pm.py review-task --repo . --task-id TASK-20260514-BAJQP --reviewer "Maya" --decision "approved" --notes "Accepted."
 git_pm.py register-asset --repo . --project-id PROJ-MNQRV --title "HUD mockup v2" --asset-type "mockup" --source-url "https://example.com/mockup" --used-by "PROJ-MNQRV,TASK-CQRSV" --owner "Fern"
 ```
 
@@ -317,7 +317,7 @@ git_pm.py commit-summary --repo . --since "1 week ago" --json
 `review-mrs` fetches all open PRs/MRs from the hub's provider, runs deterministic hub checks against each linked task, and optionally posts a structured review comment. Use it to give submitters immediate feedback without waiting for a human reviewer.
 
 **Deterministic checks performed per PR:**
-- Task ID (e.g. `TASK-BAJQP`) referenced in PR title or body
+- Task ID (e.g. `TASK-20260514-BAJQP`) referenced in PR title or body
 - Task is in `In Review` status
 - Task has an `output` field set (matching the PR URL)
 - `output_commit` is set when a `target_repo` is registered
