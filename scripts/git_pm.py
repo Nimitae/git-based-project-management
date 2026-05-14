@@ -1344,7 +1344,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if args.git_init and not (repo / ".git").exists():
         git(["init", "-b", "main"], repo, check=True)
         git(["add", "."], repo, check=True)
-        git(["commit", "-m", "Initialize project management workspace"], repo, check=False)
+        git(["commit", "-m", f"Initialize project management workspace\n\nReviewed-By: GBPM"], repo, check=False)
 
     print(f"\nInitialized project management repo at {repo}")
     website_ok = (repo / "website" / "server.mjs").exists()
