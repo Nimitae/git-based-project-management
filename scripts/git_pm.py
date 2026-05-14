@@ -13,6 +13,7 @@ import json
 import mimetypes
 import os
 from pathlib import Path
+import random
 import re
 import shutil
 import subprocess
@@ -426,16 +427,29 @@ def markdown_doc(frontmatter: dict, title: str, body: str) -> str:
     return f"---\n{fm}\n---\n\n# {title}\n\n{body.strip()}\n"
 
 
+# Consonants + unambiguous digits — no vowels (avoids accidental words) and no 0/1/I/O lookalikes.
+_ID_ALPHABET = "BCDFGHJKLMNPQRSTVWXYZ23456789"
+
+
+def random_id(length: int = 5) -> str:
+    """Return a random string of `length` characters from _ID_ALPHABET."""
+    return "".join(random.choices(_ID_ALPHABET, k=length))
+
+
 def allocate_id(registry: dict, kind: str) -> str:
+    """Allocate a unique random ID for a hub entity (e.g. TASK-BAJQP).
+
+    Random IDs prevent merge conflicts when multiple branches each create
+    new entities simultaneously.  next_ids is intentionally not used.
+    """
     prefix = ID_PREFIX[kind]
     section = "docs" if kind == "doc" else f"{kind}s"
     existing = set(registry.get(section, {}).keys())
-    next_ids = registry.setdefault("next_ids", {})
-    number = int(next_ids.get(kind, 1))
-    while f"{prefix}{number}" in existing:
-        number += 1
-    next_ids[kind] = number + 1
-    return f"{prefix}{number}"
+    for _ in range(200):
+        candidate = f"{prefix}-{random_id()}"
+        if candidate not in existing:
+            return candidate
+    raise GitPMError(f"could not allocate a unique {kind} ID after 200 attempts")
 
 
 def project_folder(project_id: str, name: str) -> str:
@@ -781,9 +795,14 @@ def make_feature_proposal_doc(doc_id: str, project: dict, payload: dict) -> tupl
 
 
 def ensure_base_registry(name: str, owner: str, provider: str, github_repo: str, gitlab_url: str, gitlab_project: str) -> dict:
-    project = make_project_record("PROJ1", name, owner, "game", "Active")
-    task_path, task, task_ref = make_task("TASK1", "PROJ1", name, "Confirm collaboration setup", owner, "PM", "Setup Confirmation")
-    doc_path, _doc_text, doc_ref = make_doc("DOC1", project, "proposal", "Kickoff Proposal", owner)
+    # Use random IDs for all seed entities so that fresh hubs never have next_ids
+    # conflicts when multiple branches each create entities simultaneously.
+    proj_id = f"PROJ-{random_id()}"
+    task_id = f"TASK-{random_id()}"
+    doc_id  = f"DOC-{random_id()}"
+    project = make_project_record(proj_id, name, owner, "game", "Active")
+    task_path, task, task_ref = make_task(task_id, proj_id, name, "Confirm collaboration setup", owner, "PM", "Setup Confirmation")
+    doc_path, _doc_text, doc_ref = make_doc(doc_id, project, "proposal", "Kickoff Proposal", owner)
     owner_email = email_from_actor(owner)
     return {
         "schema_version": 2,
@@ -791,14 +810,13 @@ def ensure_base_registry(name: str, owner: str, provider: str, github_repo: str,
         "provider": provider,
         "github": {"api_url": "https://api.github.com", "repo": github_repo, "default_branch": "main"},
         "gitlab": {"url": gitlab_url, "project_path": gitlab_project, "default_branch": "main"},
-        "next_ids": {"project": 2, "task": 2, "doc": 2, "asset": 1, "event": 1, "review": 1, "milestone": 1},
         "people": [{"name": owner, "role": "Owner", "email": owner_email}],
-        "projects": {"PROJ1": project},
+        "projects": {proj_id: project},
         "milestones": {},
-        "tasks": {"TASK1": task_ref},
-        "docs": {"DOC1": doc_ref},
+        "tasks": {task_id: task_ref},
+        "docs": {doc_id: doc_ref},
         "assets": {},
-        "_seed": {"task_path": task_path, "task": task, "doc_path": doc_path},
+        "_seed": {"proj_id": proj_id, "task_id": task_id, "doc_id": doc_id, "task_path": task_path, "task": task, "doc_path": doc_path},
     }
 
 
@@ -815,7 +833,9 @@ def default_roadmap(project: dict) -> dict:
     }
 
 
-def project_readme_body(project: dict) -> str:
+def project_readme_body(project: dict, doc_id: str = "", task_id: str = "") -> str:
+    doc_line  = f"- {doc_id} - Kickoff Proposal" if doc_id else "- *(none yet)*"
+    task_line = f"- {task_id} - Confirm collaboration setup" if task_id else "- *(none yet)*"
     return f"""
 ## State
 
@@ -836,11 +856,11 @@ Add implementation repositories in `project.yaml` so collaborators and agents kn
 
 ## Documents
 
-- DOC1 - Kickoff Proposal
+{doc_line}
 
 ## Tasks
 
-- TASK1 - Confirm collaboration setup
+{task_line}
 
 ## Assets
 
@@ -891,13 +911,13 @@ If a user asks what they need to do today:
 
 If an owner proposes a new feature:
 
-- Run `git_pm.py propose-feature --repo . --project-id PROJ# --title "<feature>" --owner "<name>"`.
+- Run `git_pm.py propose-feature --repo . --project-id <proj-id> --title "<feature>" --owner "<name>"` (look up the project ID from `registry.yaml`).
 - Fill the feature proposal with problem, value, scope, non-goals, risks, task breakdown, and decision needed.
 - Create follow-up tasks only after the proposal is accepted or explicitly approved.
 
 If a manager asks for project health:
 
-- Run `git_pm.py project-status --repo . --project-id PROJ#`.
+- Run `git_pm.py project-status --repo . --project-id <proj-id>` (look up the project ID from `registry.yaml`).
 - Run `git_pm.py blocked-tasks --repo .`, `git_pm.py review-queue --repo .`, and `git_pm.py stale-work --repo .`.
 - Summarize blockers, stale review, failed verification, missing outputs, doc drift, and decision needs.
 
@@ -940,8 +960,11 @@ Do not treat this embedded copy as a separate fork of the skill. It is a local o
 
 def write_initial_files(repo: Path, registry: dict) -> None:
     seed = registry.pop("_seed")
-    project = registry["projects"]["PROJ1"]
-    folder = project_folder("PROJ1", project["name"])
+    proj_id = seed["proj_id"]
+    task_id = seed["task_id"]
+    doc_id  = seed["doc_id"]
+    project = registry["projects"][proj_id]
+    folder = project_folder(proj_id, project["name"])
     write_text(repo / ".gitignore", ".project-hub/local.json\n.project-hub/proposals/\nstart-website.ps1\nstart-website.sh\n*.log\n__pycache__/\n")
     write_text(repo / "registry.yaml", dump(registry))
     write_text(
@@ -973,16 +996,16 @@ Task state, events, reviews, and output attempts live in Git files. This workflo
     write_text(
         repo / project["readme"],
         markdown_doc(
-            {"id": "PROJ1", "type": "project", "owner": project["owners"][0], "status": project["status"]},
-            f"PROJ1 - {project['name']}",
-            project_readme_body(project),
+            {"id": proj_id, "type": "project", "owner": project["owners"][0], "status": project["status"]},
+            f"{proj_id} - {project['name']}",
+            project_readme_body(project, doc_id=doc_id, task_id=task_id),
         ),
     )
     write_text(repo / project["roadmap"], dump(default_roadmap(project)))
     write_text(repo / seed["task_path"], dump(seed["task"]))
     for rel, text in task_support_files(seed["task_path"], seed["task"]).items():
         write_text(repo / rel, text)
-    doc_rel, doc_text, _doc_ref = make_doc("DOC1", project, "proposal", "Kickoff Proposal", project["owners"][0])
+    doc_rel, doc_text, _doc_ref = make_doc(doc_id, project, "proposal", "Kickoff Proposal", project["owners"][0])
     write_text(repo / doc_rel, doc_text)
     for rel, text in template_files().items():
         write_text(repo / rel, text)
@@ -1395,14 +1418,6 @@ def issue(level: str, code: str, message: str, path: str = "") -> dict:
     return {"level": level, "code": code, "message": message, "path": path}
 
 
-def max_suffix(ids: list[str], prefix: str) -> int:
-    values = []
-    for item in ids:
-        match = re.fullmatch(rf"{re.escape(prefix)}(\d+)", item)
-        if match:
-            values.append(int(match.group(1)))
-    return max(values) if values else 0
-
 
 def approved_review_exists(reviews: list[dict], task_id: str) -> bool:
     return any(row.get("task_id") == task_id and row.get("decision") == "approved" for row in reviews)
@@ -1516,24 +1531,25 @@ def validate_repo(repo: Path) -> list[dict]:
         registry = load_registry(repo)
     except GitPMError as exc:
         return [issue("error", "REGISTRY_PARSE", str(exc), "registry.yaml")]
-    for section in ["projects", "milestones", "tasks", "docs", "people", "next_ids"]:
+    for section in ["projects", "milestones", "tasks", "docs", "people"]:
         if section not in registry:
             issues.append(issue("error", "REGISTRY_SECTION", f"{section} must exist", "registry.yaml"))
     for index, person in enumerate(registry.get("people", []) or []):
         if not email_from_actor(person.get("email", "")):
             issues.append(issue("warn", "PEOPLE_EMAIL_MISSING", f"people[{index}] {person.get('name', 'unnamed')} should include a staff email", "registry.yaml"))
+    # Accept both legacy sequential IDs (e.g. TASK3) and new random IDs (e.g. TASK-BAJQP).
+    _RANDOM_SUFFIX_RE = re.compile(rf"[{re.escape(_ID_ALPHABET)}]{{5}}")
     for kind, section in [("project", "projects"), ("milestone", "milestones"), ("task", "tasks"), ("doc", "docs")]:
         prefix = ID_PREFIX[kind]
         records = registry.get(section, {})
         for entity_id, row in records.items():
-            if not re.fullmatch(rf"{prefix}\d+", entity_id):
-                issues.append(issue("error", "ID_FORMAT", f"{entity_id} should match {prefix}#", "registry.yaml"))
+            legacy_ok = re.fullmatch(rf"{re.escape(prefix)}\d+", entity_id)
+            random_ok = re.fullmatch(rf"{re.escape(prefix)}-[{re.escape(_ID_ALPHABET)}]{{5}}", entity_id)
+            if not (legacy_ok or random_ok):
+                issues.append(issue("error", "ID_FORMAT", f"{entity_id} should match {prefix}-XXXXX or legacy {prefix}#", "registry.yaml"))
             rel = row.get("path") or row.get("readme")
             if rel and not safe_repo_path(repo, rel).exists():
                 issues.append(issue("error", "PATH_MISSING", f"{entity_id} path does not exist", rel))
-        expected = max_suffix(list(records.keys()), prefix) + 1
-        if int(registry.get("next_ids", {}).get(kind, 1)) < expected:
-            issues.append(issue("error", "NEXT_ID_STALE", f"next_ids.{kind} should be at least {expected}", "registry.yaml"))
     for project_id, project in registry.get("projects", {}).items():
         if project.get("status") not in PROJECT_STATUSES:
             issues.append(issue("warn", "PROJECT_STATUS", f"{project_id} status is unusual: {project.get('status')}", project.get("path", "")))
@@ -1650,8 +1666,10 @@ def validate_repo(repo: Path) -> list[dict]:
         if review.get("reviewer") and not actor_has_staff_email(registry, review.get("reviewer", "")):
             issues.append(issue("warn", "REVIEWER_STAFF_EMAIL", f"{review.get('id') or review.get('task_id') or 'review'} reviewer should be a staff email or a person with email in registry.people", "reviews/task-reviews.jsonl"))
     for asset_id, asset in registry.get("assets", {}).items():
-        if not re.fullmatch(r"ASSET\d+", asset_id):
-            issues.append(issue("error", "ASSET_ID_FORMAT", f"{asset_id} should match ASSET#", "registry.yaml"))
+        _asset_legacy = re.fullmatch(r"ASSET\d+", asset_id)
+        _asset_random = re.fullmatch(rf"ASSET-[{re.escape(_ID_ALPHABET)}]{{5}}", asset_id)
+        if not (_asset_legacy or _asset_random):
+            issues.append(issue("error", "ASSET_ID_FORMAT", f"{asset_id} should match ASSET-XXXXX or legacy ASSET#", "registry.yaml"))
         if not asset.get("path") and not asset.get("source_url"):
             issues.append(issue("warn", "ASSET_LINK_MISSING", f"{asset_id} has no path or source_url", "registry.yaml"))
     for rel in [
@@ -3041,7 +3059,8 @@ def cmd_commit_summary(args: argparse.Namespace) -> int:
 
 # ── MR / PR Auto-Review ───────────────────────────────────────────────────────
 
-_TASK_ID_RE = re.compile(r"\bTASK\d+\b")
+# Matches both legacy sequential IDs (TASK3) and new random IDs (TASK-BAJQP).
+_TASK_ID_RE = re.compile(rf"\bTASK(?:-[{re.escape(_ID_ALPHABET)}]{{5}}|\d+)\b")
 
 
 def extract_task_ids_from_text(text: str) -> list[str]:
@@ -3276,7 +3295,9 @@ def cmd_demo(args: argparse.Namespace) -> int:
     )
     cmd_init(init_args)
     registry = load_registry(repo)
-    project = registry["projects"]["PROJ1"]
+    # The seed project ID is random; look it up dynamically.
+    proj_id = next(iter(registry["projects"]))
+    project = registry["projects"][proj_id]
     project["summary"] = "Demo game project showing daily workflows for design, art, engineering, production, and review."
     project["repos"] = [
         {"name": "game-client", "provider": "github", "url": "https://github.com/example/game-client", "default_branch": "main", "role": "client/gameplay"},
@@ -3298,8 +3319,8 @@ def cmd_demo(args: argparse.Namespace) -> int:
     write_text(
         repo / project["readme"],
         markdown_doc(
-            {"id": "PROJ1", "type": "project", "owner": args.owner, "status": project["status"]},
-            f"PROJ1 - {project['name']}",
+            {"id": proj_id, "type": "project", "owner": args.owner, "status": project["status"]},
+            f"{proj_id} - {project['name']}",
             """
 ## State
 
@@ -3349,7 +3370,7 @@ Use `git_pm.py update-task`, `submit-output`, `review-task`, and `register-asset
     ]
     created_tasks: list[str] = []
     for title, assignee, role, output, target_repo in task_specs:
-        task_id, path, task = create_task_payload(registry, "PROJ1", title, assignee, role, output)
+        task_id, path, task = create_task_payload(registry, proj_id, title, assignee, role, output)
         task["target_repo"] = target_repo
         task["acceptance_criteria"] = [f"{output} is linked in task output", "Task has a current user_update"]
         sync_task_ref(registry, task_id, path, task)
@@ -3358,12 +3379,12 @@ Use `git_pm.py update-task`, `submit-output`, `review-task`, and `register-asset
             write_text(repo / rel, text)
         created_tasks.append(task_id)
     save_registry(repo, registry)
-    apply_payload(repo, {"type": "register_asset", "project_id": "PROJ1", "title": "HUD mockup v1", "asset_type": "mockup", "storage": "external-link", "source_url": "https://example.com/figma/hud-v1", "used_by": "PROJ1,TASK7", "owner": "Fern", "status": "review"})
-    apply_payload(repo, {"type": "register_asset", "project_id": "PROJ1", "title": "Arena prop blockout", "asset_type": "3d-model", "storage": "external-link", "source_url": "https://example.com/assets/arena-props-blockout.glb", "used_by": "PROJ1,TASK4,TASK5", "owner": "Tara", "status": "draft"})
+    apply_payload(repo, {"type": "register_asset", "project_id": proj_id, "title": "HUD mockup v1", "asset_type": "mockup", "storage": "external-link", "source_url": "https://example.com/figma/hud-v1", "used_by": f"{proj_id},{created_tasks[6] if len(created_tasks) > 6 else ''}", "owner": "Fern", "status": "review"})
+    apply_payload(repo, {"type": "register_asset", "project_id": proj_id, "title": "Arena prop blockout", "asset_type": "3d-model", "storage": "external-link", "source_url": "https://example.com/assets/arena-props-blockout.glb", "used_by": f"{proj_id},{created_tasks[3] if len(created_tasks) > 3 else ''},{created_tasks[4] if len(created_tasks) > 4 else ''}", "owner": "Tara", "status": "draft"})
     apply_payload(repo, {"type": "update_task", "task_id": created_tasks[0], "actor": "Gina", "status": "In Progress", "user_update": "Reviewing playtest clips and tightening core loop questions."})
     apply_payload(repo, {"type": "submit_output", "task_id": created_tasks[1], "actor": "Paul", "output": "https://github.com/example/game-client/pull/42", "message": "Ability prototype ready for review."})
     apply_payload(repo, {"type": "review_task", "task_id": created_tasks[1], "reviewer": args.owner, "decision": "changes_requested", "notes": "Prototype works, but needs tuning notes linked from the design doc."})
-    print(json.dumps({"ok": True, "repo": str(repo), "project": "PROJ1", "tasks": len(task_specs) + 1, "scenario": args.scenario}, indent=2))
+    print(json.dumps({"ok": True, "repo": str(repo), "project": proj_id, "tasks": len(task_specs) + 1, "scenario": args.scenario}, indent=2))
     return 0
 
 
