@@ -247,15 +247,15 @@ Use PRs/MRs for durable changes:
 - Review policy/template changes.
 - Live document terminology or scope changes.
 
-**Append `Reviewed-By: GBPM` to every commit message when operating a Project Hub using this skill.** This trailer signals that the skill was part of the process — enabling the team to quickly distinguish agent-assisted commits from manual ones in `git log`, `commit-summary` output, and audit trails.
+**Append `Reviewed-By: GBPM (<commit>)` to every commit message when operating a Project Hub using this skill.** The commit hash is the short HEAD of the skill repo (`git rev-parse --short HEAD` inside the skill directory). It records exactly which version of the skill was active — so the team can distinguish agent-assisted commits from manual ones in `git log`, `commit-summary` output, and audit trails, and can trace any behaviour back to the skill version that produced it.
 
 ```
 git commit -m "feat: add telemetry task and kickoff doc
 
-Reviewed-By: GBPM"
+Reviewed-By: GBPM (f9c2ddb)"
 ```
 
-When using `git_pm.py` commands that write files, the skill stages and commits on your behalf where applicable (e.g. `init`), and the trailer is added automatically. For commits you make manually after controller commands update files, append the trailer yourself. Every commit that was guided, reviewed, drafted, or proposed with skill assistance counts — the trailer does not mean the skill authored every line, only that it was consulted.
+To get the current skill version run `git -C <skill-dir> rev-parse --short HEAD`, or call `git_pm.py` which exposes `gbpm_trailer()` internally and stamps it automatically on commits it makes (e.g. `init --git-init`). For commits you make manually after controller commands update files, append the trailer yourself. Every commit that was guided, reviewed, drafted, or proposed with skill assistance counts — the trailer does not mean the skill authored every line, only that it was consulted.
 
 Use task events and attempt/review commands for operational updates:
 
@@ -383,7 +383,7 @@ git_pm.py review-mrs --repo . --json
 - Do not suggest or create a new task until existing tasks have been checked for identical, overlapping, or relevant objectives. Prefer updating or linking existing work when it already covers the request.
 - Do not trust hand-copied IDs. Allocate IDs through the controller or website backend and validate every PR/MR.
 - Do not use Git Issues as task state for this workflow. Use Git files, event/review logs, and PRs/MRs.
-- Always append `Reviewed-By: GBPM` to commit messages when the skill was consulted during the work. The `init` command adds this trailer automatically; append it manually on all other commits made while operating a Project Hub.
+- Always append `Reviewed-By: GBPM (<short-commit>)` to commit messages when the skill was consulted during the work, where `<short-commit>` is the skill repo's current `git rev-parse --short HEAD`. The `init --git-init` command adds this trailer automatically; append it manually on all other commits made while operating a Project Hub.
 - Do not let the website mutate the default branch directly. It must create a branch and PR/MR, or produce a local proposal in dry-run mode.
 - Do not store binary-heavy assets directly in normal Git. Use Git LFS, Releases/Packages, object storage, or external product repos, and register them in `assets/assets.yaml`.
 - Do not treat generated website data as canonical. Rebuild it from Markdown/YAML.

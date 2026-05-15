@@ -220,6 +220,25 @@ def git_commit(repo: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def skill_version() -> str:
+    """Return the short git hash of the installed skill repo (SKILL_ROOT).
+
+    Embedded in the Reviewed-By: GBPM trailer so every commit records exactly
+    which version of the skill was active when it was made.
+    Returns 'unknown' when the skill directory is not a git repo.
+    """
+    result = git(["rev-parse", "--short", "HEAD"], SKILL_ROOT)
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+
+GBPM_TRAILER = ""  # populated after skill_version() is callable; see gbpm_trailer()
+
+
+def gbpm_trailer() -> str:
+    """Return the canonical Reviewed-By trailer for the current skill version."""
+    return f"Reviewed-By: GBPM ({skill_version()})"
+
+
 def pull_latest(repo: Path) -> tuple[bool, str]:
     """Best-effort git pull --ff-only. Returns (success, message). Never raises."""
     if not (repo / ".git").exists():
@@ -1379,7 +1398,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if args.git_init and not (repo / ".git").exists():
         git(["init", "-b", "main"], repo, check=True)
         git(["add", "."], repo, check=True)
-        git(["commit", "-m", f"Initialize project management workspace\n\nReviewed-By: GBPM"], repo, check=False)
+        git(["commit", "-m", f"Initialize project management workspace\n\n{gbpm_trailer()}"], repo, check=False)
 
     print(f"\nInitialized project management repo at {repo}")
     website_ok = (repo / "website" / "server.mjs").exists()
