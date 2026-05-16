@@ -15,7 +15,7 @@ Treat Git as the operating system:
 - Website: human interface that reads Git-derived data and turns edits into PRs/MRs instead of mutating canonical state directly.
 - Agents: use deterministic scripts first; use LLM judgment only to draft, summarize, review quality, or propose changes.
 
-**Always pull latest Git state before reading files or making edits, and pull regularly during longer sessions.** Project Hub state is shared team knowledge and may change while you are working. Pull before making decisions, before creating or reviewing PRs/MRs, before writing files, before running planning/status summaries, and again after any pause or significant elapsed time. Every `git_pm.py` command automatically runs `git pull --ff-only` before touching files. Use `--no-pull` only when working offline or when you have already pulled in the same session and know no newer commits are needed. If the pull fails (no remote, diverged branch), the command prints a warning and continues so you can still work locally.
+**Always pull latest Git state before reading files or making edits, and pull regularly during longer sessions.** Project Hub state is shared team knowledge and may change while you are working. Pull before making decisions, before creating or reviewing PRs/MRs, before writing files, before running planning/status summaries, and again after any pause or significant elapsed time. **Skipping this step is the primary cause of merge conflicts in Project Hubs** — registry.yaml and events/task-events.jsonl are append-heavy files that diverge quickly across concurrent sessions. Every `git_pm.py` command automatically runs `git pull --ff-only` before touching files. Use `--no-pull` only when working offline or when you have already pulled in the same session and know no newer commits are needed. If the pull fails (no remote, diverged branch), the command prints a warning and continues so you can still work locally; in that case, stop and resolve the divergence before pushing.
 
 **Confirm the target Project Hub before acting.** A single conversation may involve multiple Project Hub repositories, linked implementation repos, or new hubs being initialized. Do not infer the active hub only from the current working directory, previous request, browser tab, or last-used repo when more than one hub is plausible. Before reading, writing, initializing, validating, reviewing, committing, or pushing, ensure the target hub path, provider/repo, project ID, and intended operation are explicit. Ask a concise clarification question when the target hub or operation is ambiguous; this is mandatory before initialization because `init` creates canonical source-of-truth files and website/runtime scaffolding.
 
@@ -179,7 +179,11 @@ Use the bundled smoke tests before handing a setup to another agent:
    - User role and permission intent.
    If a required executable, runtime, controller script, or hub launcher is missing or not runnable, stop normal setup and prompt the user to install or repair it before treating the Project Hub as ready.
 3. Run `init` for a new management repo, or clone an existing repo. Initialization must copy the bundled Node.js website template into the Project Hub as `website/server.mjs` and `website/static/`, generate `start-website.ps1` and `start-website.sh`, and preconfigure those launchers from the hub's provider/repository settings.
-4. Ensure initialization embeds the current skill instructions into the Project Hub, including a full copy of `SKILL.md` under `.project-hub/skill/` and a README that references the original skill source repo (`https://github.com/Nimitae/git-based-project-management`) for future updates. This makes the hub self-describing when viewed without the local Codex skill installed.
+4. Ensure initialization embeds the current skill instructions into the Project Hub:
+   - Copy `SKILL.md` to `.project-hub/skill/SKILL.md` — full operating reference for agents and human collaborators who do not have the skill installed locally.
+   - Copy `scripts/git_pm.py` to `.project-hub/scripts/git_pm.py` — makes the hub self-contained; any agent cloning the repo can run the tool immediately without additional setup.
+   - Copy `assets/AGENTS.md` to `AGENTS.md` at the hub root — this file is auto-injected into agent context whenever `workdir` is set to the hub, enforcing tooling discipline before any session begins.
+   - All three files must reference the upstream source repo (`https://github.com/Nimitae/git-based-project-management`) with instructions on how to sync to a newer version. See the Skill Sync section below.
 5. Ask whether to set up regular user attention checks for this hub. These checks should pull latest Git state, inspect PRs/MRs/issues/reviews/comments/mentions related to the user, and report relevant commits since the last check.
 6. Confirm the init self-test passed. Initialization runs validation and compile after seeding files and website assets; resolve any reported errors before committing or deploying.
 7. Run the copied website from the Project Hub root for review, then deploy that initialized website runtime with Docker or the team's preferred runner.
@@ -195,6 +199,33 @@ Never commit tokens. Prefer environment variables:
 - `GPM_GITLAB_PROJECT`
 - `GPM_GITLAB_TOKEN`
 - `GPM_REPO`
+
+## Skill Sync
+
+The `git_pm.py` script, `SKILL.md`, and `AGENTS.md` bundled inside a Project Hub are snapshots taken at initialization time. Keep them current as the upstream skill evolves.
+
+**When to sync:** whenever the upstream repo has bug fixes, new commands, or updated instructions you need; or as a periodic hygiene step (recommended at least monthly for active hubs).
+
+**How to sync:**
+
+```bash
+# Pull the latest skill source
+git clone https://github.com/Nimitae/git-based-project-management.git /tmp/gbpm-latest
+
+# Copy updated files into the hub
+cp /tmp/gbpm-latest/scripts/git_pm.py .project-hub/scripts/git_pm.py
+cp /tmp/gbpm-latest/SKILL.md .project-hub/skill/SKILL.md
+cp /tmp/gbpm-latest/assets/AGENTS.md AGENTS.md
+
+# Commit and open a PR/MR
+git checkout -b chore/sync-gbpm-skill
+git add .project-hub/scripts/git_pm.py .project-hub/skill/SKILL.md AGENTS.md
+git commit -m "chore: sync git_pm.py and SKILL.md to latest GBPM upstream"
+git push -u origin chore/sync-gbpm-skill
+# Then open a PR/MR targeting master/main for review
+```
+
+After syncing, run `validate` to confirm no new errors were introduced by the updated script.
 
 ## Daily Workflow
 
